@@ -97,7 +97,12 @@ def main() -> None:
                             latency_scores[uid] = None
                             continue
 
-                        returned = [r["cid"] for r in (response.results or [])]
+                        # Be defensive about miner response shape to avoid crashes.
+                        returned = [
+                            r.get("cid")
+                            for r in (response.results or [])
+                            if isinstance(r, dict) and r.get("cid") is not None
+                        ]
                         r = recall_at_k(returned, entry.top_k_cids, k=RECALL_K)
                         recall_scores[uid] = r
                         latency_scores[uid] = response.latency_ms
@@ -142,10 +147,12 @@ def main() -> None:
             # ── Weight setting ────────────────────────────────────────────────
             if now - last_weight_set >= WEIGHT_INTERVAL:
                 last_weight_set = now
-                proof_rates = {
-                    int(uid): challenge_dispatcher.get_record(uid).success_rate
-                    for uid in [str(u) for u in uids]
-                }
+                # Only use proof records for miners that have actually been challenged.
+                # Miners with no challenges get a neutral 0.0 proof rate instead of 1.0.
+                proof_rates: dict[int, float] = {}
+                for uid in uids:
+                    record = challenge_dispatcher._records.get(str(uid))  # type: ignore[attr-defined]
+                    proof_rates[int(uid)] = record.success_rate if record else 0.0
                 reward_manager.set_weights(
                     metagraph=metagraph,
                     recall_scores=recall_scores,

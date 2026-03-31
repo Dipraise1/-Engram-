@@ -33,8 +33,14 @@ class MinerProofRecord:
 
     @property
     def success_rate(self) -> float:
+        """
+        Fraction of challenges this miner has passed.
+
+        Returns 0.0 when we have no data yet instead of assuming honesty with 1.0.
+        This avoids over-rewarding miners that have never been challenged.
+        """
         if self.total_challenges == 0:
-            return 1.0  # no data yet — assume honest
+            return 0.0
         return self.passed_challenges / self.total_challenges
 
     @property
@@ -83,17 +89,29 @@ class ChallengeDispatcher:
         if not _RUST_AVAILABLE:
             return False
 
-        # Reconstruct ProofResponse from miner's fields
+        # Enforce expiration before doing any expensive checks.
+        if time.time() > challenge.expires_at:
+            logger.warning("Received storage proof after challenge expiry.")
+            return False
+
+        # Reconstruct a ProofResponse object with the miner-provided fields and
+        # delegate verification (including CID / nonce checks) to the Rust core.
         response = engram_core.ProofResponse.__new__(engram_core.ProofResponse)
-        # We verify via the Rust verify_response function
-        # Build a temporary ProofResponse by going through generate_response on our side
-        # and compare — or we reconstruct and call verify_response directly.
-        # Since ProofResponse is a Rust struct, we use generate_response to create one
-        # from the challenge, then compare fields.
-        expected_response = engram_core.generate_response(challenge, expected_embedding)
-        return (
-            expected_response.embedding_hash == response_embedding_hash
-            and expected_response.proof == response_proof
+        # Set the underlying Rust fields via the public attributes exposed in PyO3.
+        response._ProofResponse__inner = engram_core.ProofResponse(
+            # type: ignore[attr-defined]
+            cid=challenge.cid,
+            nonce_hex=challenge.nonce_hex,
+            embedding_hash=response_embedding_hash,
+            proof=response_proof,
+        )
+
+        return bool(
+            engram_core.verify_response(
+                challenge,
+                response,
+                expected_embedding,
+            )
         )
 
     def record_result(self, uid: str, passed: bool) -> None:

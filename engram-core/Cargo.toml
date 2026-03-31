@@ -8,8 +8,12 @@ description = "Rust core for Engram subnet — CID generation and storage proofs
 name = "engram_core"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.23", features = ["abi3-py310"] }
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
