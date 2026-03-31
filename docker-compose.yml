@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  miner:
+    build:
+      context: .
+      dockerfile: docker/miner.Dockerfile
+    ports:
+      - "8091:8091"
+    env_file: .env
+    environment:
+      - QDRANT_HOST=qdrant
+      - VECTOR_STORE_BACKEND=qdrant
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  validator:
+    build:
+      context: .
+      dockerfile: docker/validator.Dockerfile
+    ports:
+      - "8092:8092"
+    env_file: .env
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
