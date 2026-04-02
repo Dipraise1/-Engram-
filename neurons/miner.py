@@ -29,16 +29,16 @@ setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 def main() -> None:
     wallet_name = os.getenv("WALLET_NAME", "default")
     wallet_hotkey = os.getenv("WALLET_HOTKEY", "default")
-    network = os.getenv("SUBTENSOR_NETWORK", "test")
+    network = os.getenv("SUBTENSOR_ENDPOINT") or os.getenv("SUBTENSOR_NETWORK", "test")
     netuid = int(os.getenv("NETUID", "99"))
     port = int(os.getenv("MINER_PORT", "8091"))
-    backend = os.getenv("VECTOR_STORE_BACKEND", "qdrant")
+    backend = os.getenv("VECTOR_STORE_BACKEND", "faiss")
 
     logger.info(f"Engram Miner v{SUBNET_VERSION} | network={network} | netuid={netuid}")
 
     # ── Bittensor setup ───────────────────────────────────────────────────────
-    wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
-    subtensor = bt.subtensor(network=network)
+    wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
+    subtensor = bt.Subtensor(network=network)
     metagraph = subtensor.metagraph(netuid=netuid)
 
     logger.info(f"Wallet: {wallet.hotkey.ss58_address}")
@@ -83,7 +83,7 @@ def main() -> None:
         return synapse
 
     # ── Axon ──────────────────────────────────────────────────────────────────
-    axon = bt.axon(wallet=wallet, port=port)
+    axon = bt.Axon(wallet=wallet, port=port)
     axon.attach(forward_fn=handle_ingest)
     axon.attach(forward_fn=handle_query)
     axon.attach(forward_fn=handle_challenge)

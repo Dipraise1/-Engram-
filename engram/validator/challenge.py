@@ -94,24 +94,12 @@ class ChallengeDispatcher:
             logger.warning("Received storage proof after challenge expiry.")
             return False
 
-        # Reconstruct a ProofResponse object with the miner-provided fields and
-        # delegate verification (including CID / nonce checks) to the Rust core.
-        response = engram_core.ProofResponse.__new__(engram_core.ProofResponse)
-        # Set the underlying Rust fields via the public attributes exposed in PyO3.
-        response._ProofResponse__inner = engram_core.ProofResponse(
-            # type: ignore[attr-defined]
-            cid=challenge.cid,
-            nonce_hex=challenge.nonce_hex,
-            embedding_hash=response_embedding_hash,
-            proof=response_proof,
-        )
-
-        return bool(
-            engram_core.verify_response(
-                challenge,
-                response,
-                expected_embedding,
-            )
+        # Generate the expected response from the known embedding, then compare
+        # the proof the miner returned against what we compute ourselves.
+        expected_response = engram_core.generate_response(challenge, expected_embedding)
+        return (
+            expected_response.embedding_hash == response_embedding_hash
+            and expected_response.proof == response_proof
         )
 
     def record_result(self, uid: str, passed: bool) -> None:

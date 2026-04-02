@@ -34,17 +34,17 @@ WEIGHT_INTERVAL = 600 # seconds between weight-setting
 def main() -> None:
     wallet_name = os.getenv("WALLET_NAME", "default")
     wallet_hotkey = os.getenv("WALLET_HOTKEY", "default")
-    network = os.getenv("SUBTENSOR_NETWORK", "test")
+    network = os.getenv("SUBTENSOR_ENDPOINT") or os.getenv("SUBTENSOR_NETWORK", "test")
     netuid = int(os.getenv("NETUID", "99"))
     gt_path = os.getenv("GROUND_TRUTH_PATH", "./data/ground_truth.jsonl")
 
     logger.info(f"Engram Validator v{SUBNET_VERSION} | network={network} | netuid={netuid}")
 
     # ── Bittensor setup ───────────────────────────────────────────────────────
-    wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
-    subtensor = bt.subtensor(network=network)
+    wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
+    subtensor = bt.Subtensor(network=network)
     metagraph = subtensor.metagraph(netuid=netuid)
-    dendrite = bt.dendrite(wallet=wallet)
+    dendrite = bt.Dendrite(wallet=wallet)
 
     # ── Components ────────────────────────────────────────────────────────────
     embedder = get_embedder()
