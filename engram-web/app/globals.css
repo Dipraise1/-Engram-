@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  background: #0A0A0F;
+  color: #e2e8f0;
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0A0A0F; }
+::-webkit-scrollbar-thumb { background: #7C3AED; border-radius: 3px; }
+
+/* Gradient text utility */
+.gradient-text {
+  background: linear-gradient(135deg, #A78BFA 0%, #7C3AED 50%, #5B21B6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow effects */
+.glow-purple {
+  box-shadow: 0 0 30px rgba(124, 58, 237, 0.3);
+}
+.glow-purple-sm {
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.2);
+}
+
+/* Grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(124, 58, 237, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 58, 237, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Code block */
+.code-block {
+  font-family: var(--font-mono);
+  background: #0F0F1A;
+  border: 1px solid #1E1E2E;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+/* Animated border */
+@keyframes border-flow {
+  0%, 100% { border-color: rgba(124, 58, 237, 0.4); }
+  50% { border-color: rgba(167, 139, 250, 0.8); }
+}
+.border-animated {
+  animation: border-flow 3s ease-in-out infinite;
+}
