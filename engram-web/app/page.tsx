@@ -104,7 +104,9 @@ function Hero({ stats }: { stats: ReturnType<typeof useLiveStats> }) {
     <section className="relative min-h-screen flex items-center justify-center grid-bg overflow-hidden">
       {/* Background glow */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-[600px] h-[600px] rounded-full bg-red-700/10 blur-[120px]" />
+        <div className="w-[700px] h-[700px] rounded-full blur-[140px]"
+          style={{ background: "radial-gradient(circle, rgba(192,38,163,0.15) 0%, rgba(124,58,237,0.08) 50%, transparent 70%)" }}
+        />
       </div>
 
       <div className="relative z-10 max-w-5xl mx-auto px-6 pt-24 pb-16 text-center">
