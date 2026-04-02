@@ -264,13 +264,34 @@ class FAISSStore(VectorStore):
 
     def save(self, path: str | None = None) -> None:
         import faiss
+        import pickle
         target = path or self._index_path
         if target:
             faiss.write_index(self._index, target)
+            # Persist ID maps and metadata alongside the index
+            meta_path = target + ".meta"
+            with open(meta_path, "wb") as f:
+                pickle.dump({
+                    "id_to_cid": self._id_to_cid,
+                    "cid_to_id": self._cid_to_id,
+                    "metadata": self._metadata,
+                    "vectors": self._vectors,
+                    "next_id": self._next_id,
+                }, f)
 
     def load(self, path: str) -> None:
         import faiss
+        import pickle
         self._index = faiss.read_index(path)
+        meta_path = path + ".meta"
+        if os.path.exists(meta_path):
+            with open(meta_path, "rb") as f:
+                data = pickle.load(f)
+            self._id_to_cid = data.get("id_to_cid", {})
+            self._cid_to_id = data.get("cid_to_id", {})
+            self._metadata  = data.get("metadata", {})
+            self._vectors   = data.get("vectors", {})
+            self._next_id   = data.get("next_id", self._index.ntotal)
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
