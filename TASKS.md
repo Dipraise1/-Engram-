@@ -199,25 +199,80 @@ Track every milestone from local chain → testnet → mainnet launch.
 ## PHASE 7 — Mainnet Launch
 > TAO incentives flowing, real miners competing
 
-- [ ] **7.1** Mainnet subnet registration
-      Need ~15,000+ TAO for mainnet burn (price varies)
-      Register via `register_subnet.py` with SUBTENSOR_NETWORK=finney (mainnet)
+### Mainnet Burn Cost Reality
+The mainnet subnet registration burn is **dynamic and expensive** (~15,000–20,000 TAO, ~$6–10M at current prices).
+You do NOT pay this out of pocket. The realistic path:
 
-- [ ] **7.2** Subnet metadata on-chain
+| Route | How |
+|-------|-----|
+| **OTF Grant** | Apply to Opentensor Foundation — they fund strong subnets with demonstrated testnet traction |
+| **Validator investment** | Validators want to stake on profitable subnets — they may co-fund the burn in exchange for early validator access |
+| **Community fundraise** | If testnet metrics are strong, the community pays the burn collectively |
+
+**Action:** Build testnet presence first → apply for OTF grant → burn covered.
+
+---
+
+### How You Make Money (Subnet Owner Economics)
+
+Bittensor routes **18% of all subnet emissions directly to the subnet owner's coldkey**.
+This is automatic, on-chain, no action required once registered on mainnet.
+
+**Emissions math:**
+- Total Bittensor emissions: ~7,200 TAO/day across all ~64 subnets
+- Each subnet earns a share based on root validator weights (how much the network values your subnet)
+- Owner cut = 18% of your subnet's share, paid to your coldkey every block
+
+**Conservative projection for Engram (once on mainnet):**
+
+| Scenario | Subnet share | Daily subnet TAO | Your 18% cut | At $450/TAO |
+|----------|-------------|-----------------|--------------|-------------|
+| Launch (small) | 0.2% | 14 TAO/day | 2.5 TAO/day | ~$1,100/day |
+| Growing | 0.5% | 36 TAO/day | 6.5 TAO/day | ~$2,900/day |
+| Established | 1.5% | 108 TAO/day | 19 TAO/day | ~$8,600/day |
+| Top-tier subnet | 3% | 216 TAO/day | 39 TAO/day | ~$17,500/day |
+
+These are **passive income** — automatically deposited to your wallet every ~12 seconds.
+
+**Additional revenue streams:**
+- Run your own validator on Engram (earn from the 41% validator pool on top of owner cut)
+- SDK/API access tier for enterprise users querying the network
+- Future: protocol fee on ingest transactions (governance vote)
+
+**What drives your subnet share higher:**
+- More miners → better query latency and recall scores
+- Stronger validators doing accurate scoring
+- Real usage (ingest + query volume)
+- Root validators allocating more weight to Engram as it proves utility
+
+---
+
+- [ ] **7.1** Apply for OTF grant
+      Opentensor Foundation grants program — submit after testnet is live with metrics
+      Include: GitHub, demo video, miner count, query volume stats
+
+- [ ] **7.2** Mainnet subnet registration
+      Fund burn via grant/validators. Register with `SUBTENSOR_NETWORK=finney`
+      Coldkey used for registration = coldkey that receives 18% owner emissions forever
+
+- [ ] **7.3** Subnet metadata on-chain
       Set subnet name, description, GitHub link via `btcli`
 
-- [ ] **7.3** Whitepaper / documentation site
-      Public docs covering: subnet design, miner setup, validator setup, SDK usage
+- [ ] **7.4** Whitepaper / documentation site
+      Public docs: subnet design, miner setup, validator setup, SDK usage
+      Required for OTF grant application and miner recruitment
 
-- [ ] **7.4** Miner onboarding guide
+- [ ] **7.5** Miner onboarding guide
       Step-by-step: hardware requirements, setup, registration, running
-
-- [ ] **7.5** First 10 external miners registered
-      Subnet reaches minimum viable decentralization
+      Target: 10+ external miners in first 2 weeks
 
 - [ ] **7.6** Emissions flowing
-      Validator setting weights, miners earning TAO
-      Monitor via taostats.io
+      Validator setting weights, miners earning TAO, owner cut hitting coldkey
+      Monitor via taostats.io → track your subnet's emission share over time
+
+- [ ] **7.7** Run your own validator on Engram
+      Stack validator rewards on top of owner cut
+      Validator pool = 41% of subnet emissions
 
 ---
 
