@@ -20,12 +20,12 @@ Track every milestone from local chain → testnet → mainnet launch.
 - [x] **0.4** Register Engram subnet on local chain
       `python scripts/register_local_subnet.py` → **NETUID = 2** ✓
 
-- [ ] **0.5** Register validator hotkey on subnet
-      `btcli subnet register --netuid 2 --wallet.name engram --subtensor.chain_endpoint ws://127.0.0.1:9944`
+- [x] **0.5** Register validator hotkey on subnet
+      uid=0 on netuid=2, hotkey: 5GYsnNdg... ✓
 
-- [ ] **0.6** Generate ownership proof
-      `python scripts/generate_ownership_proof.py --netuid 2`
-      Output: message_and_signature.txt
+- [x] **0.6** Generate ownership proof
+      message_and_signature.txt generated ✓
+      Signed by: 5FHGPfix... (coldkey)
 
 ---
 
@@ -277,7 +277,7 @@ These are **passive income** — automatically deposited to your wallet every ~1
 
 | Phase | Status |
 |-------|--------|
-| 0 — Local Chain | IN PROGRESS (0.5 + 0.6 remaining) |
+| 0 — Local Chain | COMPLETE ✓ |
 | 1 — Neurons E2E | PENDING |
 | 2 — DHT/Replication | PENDING |
 | 3 — SDK/DX | PARTIAL (CLI done) |
