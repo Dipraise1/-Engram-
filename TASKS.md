@@ -8,26 +8,23 @@ Track every milestone from local chain → testnet → mainnet launch.
 ## PHASE 0 — Local Chain & Registration
 > Get the subnet live on a local subtensor node
 
-- [ ] **0.1** Subtensor build completes
-      `bash scripts/localnet.sh --build-only`
-      Binary: `target/fast-runtime/release/node-subtensor`
+- [x] **0.1** Subtensor build completes
+      Binary: `target/fast-runtime/release/node-subtensor` (75MB, built 2026-04-03)
 
-- [ ] **0.2** Start local subtensor chain
-      `bash scripts/localnet.sh`
-      Verify: ws://127.0.0.1:9944 accepting connections
+- [x] **0.2** Start local subtensor chain
+      Running at ws://127.0.0.1:9944 ✓
 
-- [ ] **0.3** Fund engram wallet from Alice (local chain)
-      `btcli wallet transfer --wallet.name Alice --dest <coldkey> --amount 1000 --subtensor.chain_endpoint ws://127.0.0.1:9944`
+- [x] **0.3** Fund engram wallet from Alice (local chain)
+      `python scripts/fund_from_alice.py` → τ2,000 transferred ✓
 
-- [ ] **0.4** Register Engram subnet on local chain
-      `python scripts/register_local_subnet.py`
-      Expected: NETUID assigned, .env auto-updated
+- [x] **0.4** Register Engram subnet on local chain
+      `python scripts/register_local_subnet.py` → **NETUID = 2** ✓
 
 - [ ] **0.5** Register validator hotkey on subnet
-      `btcli subnet register --netuid <N> --wallet.name engram --subtensor.chain_endpoint ws://127.0.0.1:9944`
+      `btcli subnet register --netuid 2 --wallet.name engram --subtensor.chain_endpoint ws://127.0.0.1:9944`
 
 - [ ] **0.6** Generate ownership proof
-      `python scripts/generate_ownership_proof.py --netuid <N>`
+      `python scripts/generate_ownership_proof.py --netuid 2`
       Output: message_and_signature.txt
 
 ---
@@ -280,7 +277,7 @@ These are **passive income** — automatically deposited to your wallet every ~1
 
 | Phase | Status |
 |-------|--------|
-| 0 — Local Chain | IN PROGRESS (subtensor building) |
+| 0 — Local Chain | IN PROGRESS (0.5 + 0.6 remaining) |
 | 1 — Neurons E2E | PENDING |
 | 2 — DHT/Replication | PENDING |
 | 3 — SDK/DX | PARTIAL (CLI done) |
