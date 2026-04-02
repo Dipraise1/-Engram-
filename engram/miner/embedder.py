@@ -51,17 +51,27 @@ class Embedder:
 
     def _init_local(self) -> None:
         try:
+            import torch
             from sentence_transformers import SentenceTransformer
             model_name = os.getenv("LOCAL_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-            self._local_model = SentenceTransformer(model_name)
-            logger.info(f"Embedder: local sentence-transformers ({model_name})")
+            
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+                
+            self._local_model = SentenceTransformer(model_name, device=device)
+            logger.info(f"Embedder: local sentence-transformers ({model_name}) on {device}")
         except ImportError:
             raise RuntimeError(
-                "sentence-transformers not installed. Run: pip install sentence-transformers"
+                "sentence-transformers or torch not installed. Run: pip install sentence-transformers torch"
             )
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    @lru_cache(maxsize=10000)
     def embed(self, text: str) -> np.ndarray:
         """Embed a single text string. Returns a float32 numpy array."""
         text = text.strip()
@@ -69,8 +79,9 @@ class Embedder:
             raise ValueError("Cannot embed empty text.")
 
         if self.backend == "openai":
-            return self._embed_openai(text)
-        return self._embed_local(text)
+            # Return copy to prevent accidental mutation of cached arrays
+            return self._embed_openai(text).copy()
+        return self._embed_local(text).copy()
 
     def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
         """Embed multiple texts. Returns a list of float32 arrays."""

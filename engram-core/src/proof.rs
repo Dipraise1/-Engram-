@@ -108,11 +108,23 @@ pub fn generate_response(challenge: &Challenge, embedding: &[f32]) -> ProofRespo
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn hash_embedding(embedding: &[f32]) -> String {
-    let mut bytes = Vec::with_capacity(embedding.len() * 4);
-    for &f in embedding {
-        bytes.extend_from_slice(&f.to_le_bytes());
+    let mut hasher = Sha256::new();
+    
+    #[cfg(target_endian = "little")]
+    {
+        let ptr = embedding.as_ptr() as *const u8;
+        let len = embedding.len() * 4;
+        let byte_slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+        hasher.update(byte_slice);
     }
-    let digest = Sha256::digest(&bytes);
+    #[cfg(not(target_endian = "little"))]
+    {
+        for &f in embedding {
+            hasher.update(&f.to_le_bytes());
+        }
+    }
+    
+    let digest = hasher.finalize();
     hex::encode(digest)
 }
 

@@ -22,6 +22,8 @@ class RewardManager:
         self._subtensor = subtensor
         self._wallet = wallet
         self._netuid = netuid
+        self.moving_averages: dict[int, float] = {}
+        self.alpha: float = 0.1  # 10% recent score, 90% historical
 
     def set_weights(
         self,
@@ -44,7 +46,13 @@ class RewardManager:
                 latency_ms=latency_scores.get(uid),
                 proof_success_rate=proof_rates.get(uid, 0.0),
             )
-            raw_scores[uid] = score
+
+            if uid in self.moving_averages:
+                self.moving_averages[uid] = self.alpha * score + (1 - self.alpha) * self.moving_averages[uid]
+            else:
+                self.moving_averages[uid] = score
+
+            raw_scores[uid] = self.moving_averages[uid]
 
         normalized = normalize_scores({str(uid): s for uid, s in raw_scores.items()})
 

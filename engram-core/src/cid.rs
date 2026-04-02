@@ -21,9 +21,6 @@ pub fn generate_cid(
     metadata: &BTreeMap<String, String>,
     model_version: &str,
 ) -> String {
-    let vec_bytes = floats_to_bytes(embedding);
-
-    // Build canonical metadata: always include model_version, sorted keys
     let mut canonical = metadata.clone();
     canonical.insert("model_version".to_string(), model_version.to_string());
 
@@ -32,7 +29,21 @@ pub fn generate_cid(
     let meta_bytes = meta_json.as_bytes();
 
     let mut hasher = Sha256::new();
-    hasher.update(&vec_bytes);
+    
+    #[cfg(target_endian = "little")]
+    {
+        let ptr = embedding.as_ptr() as *const u8;
+        let len = embedding.len() * 4;
+        let byte_slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+        hasher.update(byte_slice);
+    }
+    #[cfg(not(target_endian = "little"))]
+    {
+        for &f in embedding {
+            hasher.update(&f.to_le_bytes());
+        }
+    }
+
     hasher.update(meta_bytes);
     let digest = hasher.finalize();
 
@@ -67,14 +78,6 @@ pub fn parse_cid(cid: &str) -> Result<(&str, &str), String> {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn floats_to_bytes(floats: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(floats.len() * 4);
-    for &f in floats {
-        bytes.extend_from_slice(&f.to_le_bytes());
-    }
-    bytes
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
