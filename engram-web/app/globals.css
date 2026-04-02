@@ -24,11 +24,11 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #0A0A0F; }
-::-webkit-scrollbar-thumb { background: #7C3AED; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: #DC2626; border-radius: 3px; }
 
 /* Gradient text utility */
 .gradient-text {
-  background: linear-gradient(135deg, #A78BFA 0%, #7C3AED 50%, #5B21B6 100%);
+  background: linear-gradient(135deg, #FCA5A5 0%, #DC2626 50%, #991B1B 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -36,17 +36,17 @@ body {
 
 /* Glow effects */
 .glow-purple {
-  box-shadow: 0 0 30px rgba(124, 58, 237, 0.3);
+  box-shadow: 0 0 30px rgba(220, 38, 38, 0.35);
 }
 .glow-purple-sm {
-  box-shadow: 0 0 12px rgba(124, 58, 237, 0.2);
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.2);
 }
 
 /* Grid background */
 .grid-bg {
   background-image:
-    linear-gradient(rgba(124, 58, 237, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(124, 58, 237, 0.05) 1px, transparent 1px);
+    linear-gradient(rgba(220, 38, 38, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(220, 38, 38, 0.05) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
@@ -63,8 +63,8 @@ body {
 
 /* Animated border */
 @keyframes border-flow {
-  0%, 100% { border-color: rgba(124, 58, 237, 0.4); }
-  50% { border-color: rgba(167, 139, 250, 0.8); }
+  0%, 100% { border-color: rgba(220, 38, 38, 0.4); }
+  50% { border-color: rgba(252, 165, 165, 0.8); }
 }
 .border-animated {
   animation: border-flow 3s ease-in-out infinite;

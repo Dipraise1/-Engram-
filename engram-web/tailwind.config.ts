@@ -9,12 +9,12 @@ const config: Config = {
     extend: {
       colors: {
         engram: {
-          purple: "#7C3AED",
-          violet: "#8B5CF6",
-          light: "#A78BFA",
-          dark: "#0A0A0F",
-          card: "#0F0F1A",
-          border: "#1E1E2E",
+          purple: "#DC2626",
+          violet: "#EF4444",
+          light: "#FCA5A5",
+          dark: "#0A0A0A",
+          card: "#0F0A0A",
+          border: "#2E1A1A",
         },
       },
       fontFamily: {
