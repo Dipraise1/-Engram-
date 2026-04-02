@@ -26,7 +26,7 @@ load_dotenv()
 LOCAL_ENDPOINT = "ws://127.0.0.1:9944"
 
 
-def wait_for_chain(subtensor: bt.subtensor, timeout: int = 30) -> bool:
+def wait_for_chain(subtensor: bt.Subtensor, timeout: int = 30) -> bool:
     """Wait up to `timeout` seconds for the local chain to become reachable."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -43,7 +43,7 @@ def main() -> None:
     wallet_hotkey = os.getenv("WALLET_HOTKEY", "default")
 
     logger.info(f"Connecting to local subtensor at {LOCAL_ENDPOINT}...")
-    subtensor = bt.subtensor(network=LOCAL_ENDPOINT)
+    subtensor = bt.Subtensor(network=LOCAL_ENDPOINT)
 
     if not wait_for_chain(subtensor):
         logger.error(
@@ -54,7 +54,7 @@ def main() -> None:
 
     logger.info(f"Connected. Block: {subtensor.block}")
 
-    wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
+    wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
     coldkey_addr = wallet.coldkey.ss58_address
     logger.info(f"Wallet coldkey: {coldkey_addr}")
 
@@ -82,11 +82,25 @@ def main() -> None:
         logger.info("Aborted.")
         sys.exit(0)
 
-    netuid = subtensor.register_network(wallet=wallet)
+    # Snapshot existing netuids so we can detect the new one
+    before_ids = set(subtensor.get_all_subnets_netuid())
 
-    if netuid is None:
+    result = subtensor.register_subnet(wallet=wallet)
+
+    # register_subnet returns an ExtrinsicResponse in newer bittensor versions
+    if hasattr(result, "success"):
+        if not result.success:
+            logger.error(f"Registration failed: {result.message}")
+            sys.exit(1)
+        # Detect the new NETUID by diffing subnet lists
+        after_ids = set(subtensor.get_all_subnets_netuid())
+        new_ids = after_ids - before_ids
+        netuid = new_ids.pop() if new_ids else max(after_ids)
+    elif result is None:
         logger.error("Registration failed — check wallet balance and chain connectivity.")
         sys.exit(1)
+    else:
+        netuid = int(result)
 
     logger.success(f"Subnet registered! NETUID = {netuid}")
 
