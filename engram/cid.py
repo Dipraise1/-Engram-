@@ -19,8 +19,11 @@ from engram.config import CID_SEPARATOR, CID_VERSION_PREFIX, CANONICAL_MODEL_VER
 
 
 def _canonical_metadata(metadata: dict[str, Any]) -> bytes:
-    """Deterministic JSON serialization of metadata for hashing."""
-    return json.dumps(metadata, sort_keys=True, ensure_ascii=True).encode("utf-8")
+    """Deterministic JSON serialization of metadata for hashing.
+    Uses separators=(',',':') to match Rust serde_json output (no spaces).
+    """
+    return json.dumps(metadata, sort_keys=True, ensure_ascii=True,
+                      separators=(",", ":")).encode("utf-8")
 
 
 def generate_cid(

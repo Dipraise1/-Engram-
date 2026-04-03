@@ -2,6 +2,7 @@
 Engram Subnet — Global Configuration
 All subnet-wide constants live here. Never hardcode these elsewhere.
 """
+import os
 from typing import Literal
 
 # ── Identity ───────────────────────────────────────────────────────────────────
@@ -10,8 +11,8 @@ SUBNET_VERSION = "0.1.0"
 SPEC_VERSION = 100  # bump on any breaking protocol change
 
 # ── Canonical Embedding Model (locked per subnet epoch) ───────────────────────
-CANONICAL_MODEL: str = "text-embedding-3-small"
-EMBEDDING_DIM: int = 1536
+CANONICAL_MODEL: str = os.getenv("LOCAL_EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_DIM: int = int(os.getenv("EMBEDDING_DIM", "1536"))
 CANONICAL_MODEL_VERSION: str = "v1"
 
 # ── CID ────────────────────────────────────────────────────────────────────────

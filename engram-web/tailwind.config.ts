@@ -9,25 +9,29 @@ const config: Config = {
     extend: {
       colors: {
         engram: {
-          purple: "#9B1D77",
-          violet: "#C026A3",
-          light: "#F0ABDC",
-          dark: "#08050A",
-          card: "#0F080E",
-          border: "#2A1020",
+          bg: "#080608",
+          surface: "#0e0b12",
+          border: "#1e1525",
+          muted: "#6b5a7e",
+          accent: "#e040fb",
+          red: "#f87171",
+          violet: "#7c3aed",
+          text: "#c4b5d4",
         },
       },
       fontFamily: {
-        mono: ["var(--font-mono)", "monospace"],
+        display: ['"Cormorant Garamond"', "Georgia", "serif"],
+        sans: ['"DM Sans"', "system-ui", "sans-serif"],
+        mono: ['"JetBrains Mono"', "monospace"],
       },
       animation: {
-        "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "float": "float 6s ease-in-out infinite",
+        "pulse-slow": "pulse 4s ease-in-out infinite",
+        "fade-in": "fadeIn 0.6s ease-out forwards",
       },
       keyframes: {
-        float: {
-          "0%, 100%": { transform: "translateY(0px)" },
-          "50%": { transform: "translateY(-12px)" },
+        fadeIn: {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
         },
       },
     },
