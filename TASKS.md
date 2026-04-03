@@ -69,13 +69,14 @@ Track every milestone from local chain → testnet → mainnet launch.
 - [x] **2.3** Sync metagraph periodically
       Miner + validator refresh metagraph + DHT every 60s / each loop cycle
 
-- [ ] **2.4** Multi-miner local test
+- [x] **2.4** Multi-miner local test
       Spin up 2 miners on different ports
-      Ingest CID → verify it lands on both assigned miners via DHT
+      Ingest CID → verify it lands on both assigned miners via DHT ✓
 
-- [ ] **2.5** Repair targeting
+- [x] **2.5** Repair targeting
       Kill one miner → `replication_mgr.handle_miner_offline(uid)`
-      Validator detects `ReplicationStatus.DEGRADED` and triggers repair
+      Validator detects `ReplicationStatus.DEGRADED` and triggers repair ✓
+      8/8 checks passing (test_repair_targeting.py)
 
 ---
 
@@ -185,6 +186,34 @@ Track every milestone from local chain → testnet → mainnet launch.
 
 ---
 
+## PHASE 8 — Normal User Experience
+> Make Engram useful to everyday Bittensor users (not just miners/validators)
+
+- [ ] **8.1** Wallet pattern tracker
+      Track which hotkeys are ingesting/querying Engram over time
+      Dashboard: per-wallet ingest count, query count, stake, CID history
+      Output: `engram wallet-stats <hotkey>` CLI command
+
+- [ ] **8.2** Subnet analytics dashboard (web)
+      Real-time stats: total vectors stored, query throughput, top miners by score
+      Embed in engram-web (the public marketing site)
+      Pull from metagraph + miner `/health` endpoints
+
+- [ ] **8.3** AI agent memory UX
+      Demonstrate Engram as persistent memory for AI agents
+      Example: LangChain / LlamaIndex integration that stores agent context to Engram
+      Publish a `engram-langchain` adapter in the SDK
+
+- [ ] **8.4** "Store my data" onboarding flow (web)
+      Simple form on engram-web: paste text → click "Store on Engram" → get CID back
+      Uses SDK client under the hood (no wallet required for demo)
+
+- [ ] **8.5** Personal knowledge base demo
+      CLI flow: ingest a folder of markdown notes, query semantically
+      `engram ingest --dir ./notes && engram query "what did I write about X?"`
+
+---
+
 ## PHASE 7 — Mainnet Launch
 > TAO incentives flowing, real miners competing
 
@@ -271,12 +300,13 @@ These are **passive income** — automatically deposited to your wallet every ~1
 |-------|--------|
 | 0 — Local Chain | COMPLETE ✓ |
 | 1 — Neurons E2E | COMPLETE ✓ (score=0.938) |
-| 2 — DHT/Replication | PARTIAL (2.1–2.3 done, multi-miner test pending) |
+| 2 — DHT/Replication | COMPLETE ✓ (multi-miner + repair targeting verified) |
 | 3 — SDK/DX | PARTIAL (CLI done) |
 | 4 — Testnet | BLOCKED (need TAO) |
 | 5 — Rust Core | PARTIAL (code done, not integrated) |
 | 6 — Production | PENDING |
 | 7 — Mainnet | PENDING |
+| 8 — Normal User UX | PENDING |
 
 ---
 
@@ -300,3 +330,6 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 2026-04-04 | Python CID separator bug fixed (json separators=(',',':') to match Rust serde_json) |
 | 2026-04-04 | validator: urllib thread-pool replaces aiohttp (fixes nest_asyncio/TimerContext conflict) |
 | 2026-04-04 | PHASE 1 COMPLETE: miner + validator running, recall=1.0, proof_rate=1.0, demo score=0.938 |
+| 2026-04-04 | Phase 2.4: multi-miner DHT test PASS (2 miners, CID ingested+queried on both) |
+| 2026-04-04 | Phase 2.5: repair targeting 8/8 PASS (offline detection, DEGRADED status, repair routing) |
+| 2026-04-04 | PHASE 2 COMPLETE: DHT + replication fully verified |
