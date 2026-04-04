@@ -20,6 +20,7 @@ import json
 import socket
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from engram.cid import parse_cid
@@ -163,6 +164,66 @@ class EngramClient:
             raise QueryError(data["error"])
 
         return data.get("results") or []
+
+    def batch_ingest_file(
+        self,
+        path: str | Path,
+        return_errors: bool = False,
+    ) -> list[str] | tuple[list[str], list[str]]:
+        """
+        Ingest all records from a JSONL file.
+
+        Each line must be a JSON object with a "text" key (required) and an
+        optional "metadata" dict. Lines that are malformed or missing "text"
+        are skipped and captured as errors.
+
+        Args:
+            path:          Path to a .jsonl file.
+            return_errors: If True, return (cids, errors) tuple instead of just cids.
+
+        Returns:
+            list[str]                     — list of CIDs (default)
+            tuple[list[str], list[str]]   — (cids, error_messages) if return_errors=True
+
+        Raises:
+            FileNotFoundError if the file does not exist.
+            MinerOfflineError if the miner is unreachable.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"JSONL file not found: {path}")
+
+        cids: list[str] = []
+        errors: list[str] = []
+
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as exc:
+                errors.append(f"line {lineno}: JSON parse error: {exc}")
+                continue
+
+            text = obj.get("text")
+            if not text or not isinstance(text, str) or not text.strip():
+                errors.append(f"line {lineno}: missing or empty 'text' field")
+                continue
+
+            metadata = obj.get("metadata") or {}
+
+            try:
+                cid = self.ingest(text, metadata=metadata)
+                cids.append(cid)
+            except IngestError as exc:
+                errors.append(f"line {lineno}: ingest error: {exc}")
+            # MinerOfflineError propagates — fail fast if miner goes down mid-batch
+
+        if return_errors:
+            return cids, errors
+        return cids
 
     def health(self) -> dict[str, Any]:
         """
