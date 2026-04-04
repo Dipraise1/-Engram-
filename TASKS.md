@@ -97,12 +97,14 @@ Track every milestone from local chain → testnet → mainnet launch.
       64 rec/sec on 50-record batch; error tolerance (bad records skipped)
       13/13 checks passing (test_batch_ingest.py)
 
-- [ ] **3.4** CLI `engram status` shows live neuron info
-      Connect to metagraph, show registered miners, stake, scores
+- [x] **3.4** CLI `engram status` shows live neuron info ✓
+      `engram status --live`: connects to metagraph, shows UID/hotkey/IP/stake/health
+      "← you" label on own hotkey; offline detection via health probe
 
-- [ ] **3.5** PyPI package prep
-      `pyproject.toml` with correct entry points
-      `pip install engram-subnet` installs CLI + SDK
+- [x] **3.5** PyPI package prep ✓
+      `pyproject.toml`: classifiers, URLs, optional deps (qdrant, openai, dev)
+      `pip install -e .` installs CLI + SDK; `engram --help` works
+      Entry point: `engram = "engram.cli:app"`
 
 ---
 
@@ -304,7 +306,7 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 0 — Local Chain | COMPLETE ✓ |
 | 1 — Neurons E2E | COMPLETE ✓ (score=0.938) |
 | 2 — DHT/Replication | COMPLETE ✓ (multi-miner + repair targeting verified) |
-| 3 — SDK/DX | PARTIAL (SDK 3.1+3.2 done, JSONL batch + status + PyPI pending) |
+| 3 — SDK/DX | COMPLETE ✓ (SDK, batch ingest, status --live, PyPI ready) |
 | 4 — Testnet | BLOCKED (need TAO) |
 | 5 — Rust Core | PARTIAL (code done, not integrated) |
 | 6 — Production | PENDING |
@@ -338,3 +340,6 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 2026-04-04 | PHASE 2 COMPLETE: DHT + replication fully verified |
 | 2026-04-04 | Phase 3.1/3.2: EngramClient SDK 28/28 tests passing (ingest, query, error handling) |
 | 2026-04-04 | Phase 3.3: JSONL batch ingest 13/13 PASS — 64 rec/sec, error tolerance working |
+| 2026-04-04 | Phase 3.4: engram status --live shows metagraph neurons, stake, health probes |
+| 2026-04-04 | Phase 3.5: pyproject.toml finalized, pip install -e . works, engram CLI ready |
+| 2026-04-04 | PHASE 3 COMPLETE: SDK + CLI fully working |

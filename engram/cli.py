@@ -17,9 +17,12 @@ import json
 from pathlib import Path
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+
+load_dotenv()
 
 app = typer.Typer(
     name="engram",
@@ -168,8 +171,11 @@ def query(
 
 
 @app.command()
-def status():
-    """Show local store status."""
+def status(
+    live: bool = typer.Option(False, "--live", "-l", help="Fetch live metagraph data from the chain."),
+    netuid: int = typer.Option(None, "--netuid", help="Subnet UID (overrides NETUID env var)."),
+):
+    """Show local store status and optionally live neuron info from metagraph."""
     store, embedder = _get_store_and_embedder()
 
     try:
@@ -189,6 +195,82 @@ def status():
         border_style="purple",
     )
     console.print(panel)
+
+    if not live:
+        console.print("[dim]Tip: use --live to fetch metagraph data from the chain[/dim]")
+        return
+
+    # ── Live metagraph info ───────────────────────────────────────────────────
+    import time
+    net = os.getenv("SUBTENSOR_ENDPOINT") or os.getenv("SUBTENSOR_NETWORK", "test")
+    uid = netuid if netuid is not None else int(os.getenv("NETUID", "99"))
+
+    console.print(f"\n[bold]Fetching metagraph[/bold] | network=[cyan]{net}[/cyan] | netuid=[cyan]{uid}[/cyan]")
+
+    try:
+        import bittensor as bt
+        subtensor = bt.Subtensor(network=net)
+        meta = subtensor.metagraph(netuid=uid)
+    except Exception as exc:
+        console.print(f"[red]Failed to connect: {exc}[/red]")
+        return
+
+    # ── Neuron table ──────────────────────────────────────────────────────────
+    table = Table(show_header=True, header_style="bold magenta", title=f"Subnet {uid} Neurons")
+    table.add_column("UID", justify="right", style="dim")
+    table.add_column("Hotkey", style="cyan")
+    table.add_column("IP:Port")
+    table.add_column("Stake", justify="right")
+    table.add_column("Trust", justify="right")
+    table.add_column("Incentive", justify="right")
+    table.add_column("Health")
+
+    wallet_name = os.getenv("WALLET_NAME", "default")
+    wallet_hotkey = os.getenv("WALLET_HOTKEY", "default")
+    try:
+        my_hotkey = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey).hotkey.ss58_address
+    except Exception:
+        my_hotkey = None
+
+    axons = meta.axons
+    uids_list = meta.uids.tolist()
+
+    # Health-check each miner via SDK
+    from engram.sdk import EngramClient, MinerOfflineError
+    fallback_port = int(os.getenv("MINER_PORT", "8091"))
+    fallback_ip = os.getenv("MINER_IP", "127.0.0.1")
+
+    for uid_i, axon in zip(uids_list, axons):
+        ip = axon.ip if axon.ip not in ("0.0.0.0", "0") else fallback_ip
+        port = axon.port or fallback_port
+        url = f"http://{ip}:{port}"
+
+        # Quick health probe (short timeout)
+        try:
+            h = EngramClient(url, timeout=3.0).health()
+            health = f"[green]✓ {h.get('vectors', '?')}v[/green]"
+        except Exception:
+            health = "[red]offline[/red]"
+
+        hotkey_short = axon.hotkey[:12] + "…" if axon.hotkey else "—"
+        is_me = "← [bold]you[/bold]" if axon.hotkey == my_hotkey else ""
+
+        stake = float(meta.S[uid_i]) if hasattr(meta, "S") else 0.0
+        trust = float(meta.T[uid_i]) if hasattr(meta, "T") else 0.0
+        incentive = float(meta.I[uid_i]) if hasattr(meta, "I") else 0.0
+
+        table.add_row(
+            str(uid_i),
+            f"{hotkey_short} {is_me}",
+            f"{ip}:{port}",
+            f"{stake:.4f}τ",
+            f"{trust:.4f}",
+            f"{incentive:.4f}",
+            health,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Block: {subtensor.block} | {len(uids_list)} neurons registered[/dim]")
 
 
 @app.command()
