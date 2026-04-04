@@ -26,7 +26,9 @@ from loguru import logger
 from engram.config import SUBNET_VERSION
 from engram.miner.embedder import get_embedder
 from engram.miner.ingest import IngestHandler
+from engram.miner.metrics import METRICS, generate_latest
 from engram.miner.query import QueryHandler
+from engram.miner.rate_limiter import RateLimiter
 from engram.miner.store import build_store
 from engram.protocol import IngestSynapse, QuerySynapse
 from engram.storage.dht import DHTRouter, Peer
@@ -81,8 +83,10 @@ async def run() -> None:
     # ── Core components ───────────────────────────────────────────────────────
     store          = build_store(backend)
     embedder       = get_embedder()
-    ingest_handler = IngestHandler(store=store, embedder=embedder)
+    ingest_handler = IngestHandler(store=store, embedder=embedder,
+                                   subtensor=subtensor, netuid=netuid)
     query_handler  = QueryHandler(store=store, embedder=embedder)
+    rate_limiter   = RateLimiter()
 
     logger.info(f"Vector store: {backend} | {store.count()} vectors loaded")
 
@@ -108,24 +112,47 @@ async def run() -> None:
     # ── HTTP handlers ─────────────────────────────────────────────────────────
 
     async def handle_ingest(req: web.Request) -> web.Response:
+        import time as _time
+        t0 = _time.perf_counter()
         try:
-            body     = await req.json()
+            body          = await req.json()
+            caller_hotkey = body.get("hotkey")
+
+            if caller_hotkey:
+                try:
+                    rate_limiter.check(caller_hotkey)
+                except ValueError as exc:
+                    METRICS.ingest_total.labels(status="rate_limited").inc()
+                    return web.json_response({"error": str(exc)}, status=429)
+
             synapse  = IngestSynapse(
                 text          = body.get("text"),
                 raw_embedding = body.get("raw_embedding"),
                 metadata      = body.get("metadata") or {},
             )
-            result = ingest_handler.handle(synapse)
-            if result.cid:
+            result = ingest_handler.handle(synapse, caller_hotkey=caller_hotkey)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            METRICS.ingest_duration.observe(elapsed_ms)
+
+            if result.error:
+                status = "low_stake" if "stake" in (result.error or "") else "error"
+                METRICS.ingest_total.labels(status=status).inc()
+            else:
+                METRICS.ingest_total.labels(status="ok").inc()
+                METRICS.vectors_stored.set(store.count())
                 replication_mgr.register(result.cid)
                 if not router.should_store(result.cid):
                     logger.debug(f"DHT: not primary for {result.cid[:16]}… (stored anyway)")
+
             return web.json_response({"cid": result.cid, "error": result.error})
         except Exception as exc:
+            METRICS.ingest_total.labels(status="error").inc()
             logger.error(f"Ingest error: {exc}")
             return web.json_response({"error": str(exc)}, status=500)
 
     async def handle_query(req: web.Request) -> web.Response:
+        import time as _time
+        t0 = _time.perf_counter()
         try:
             body    = await req.json()
             synapse = QuerySynapse(
@@ -134,12 +161,16 @@ async def run() -> None:
                 top_k        = int(body.get("top_k", 10)),
             )
             result = query_handler.handle(synapse)
+            elapsed_ms = (_time.perf_counter() - t0) * 1000
+            METRICS.query_duration.observe(elapsed_ms)
+            METRICS.query_total.labels(status="error" if result.error else "ok").inc()
             return web.json_response({
                 "results"   : result.results or [],
                 "latency_ms": result.latency_ms,
                 "error"     : result.error,
             })
         except Exception as exc:
+            METRICS.query_total.labels(status="error").inc()
             logger.error(f"Query error: {exc}")
             return web.json_response({"error": str(exc)}, status=500)
 
@@ -165,14 +196,32 @@ async def run() -> None:
             return web.json_response({"error": str(exc)}, status=500)
 
     async def handle_health(req: web.Request) -> web.Response:
-        return web.json_response({"status": "ok", "vectors": store.count(), "uid": our_uid})
+        METRICS.vectors_stored.set(store.count())
+        METRICS.peers_online.set(router.peer_count())
+        return web.json_response({
+            "status": "ok",
+            "vectors": store.count(),
+            "uid": our_uid,
+            "peers": router.peer_count(),
+        })
+
+    async def handle_metrics(req: web.Request) -> web.Response:
+        """Prometheus metrics endpoint — scrape with Prometheus or view in browser."""
+        METRICS.vectors_stored.set(store.count())
+        METRICS.peers_online.set(router.peer_count())
+        return web.Response(
+            body=generate_latest(),
+            content_type="text/plain",
+            charset="utf-8",
+        )
 
     # ── aiohttp server ────────────────────────────────────────────────────────
     app = web.Application()
-    app.router.add_post("/IngestSynapse",   handle_ingest)
-    app.router.add_post("/QuerySynapse",    handle_query)
+    app.router.add_post("/IngestSynapse",    handle_ingest)
+    app.router.add_post("/QuerySynapse",     handle_query)
     app.router.add_post("/ChallengeSynapse", handle_challenge)
-    app.router.add_get("/health",           handle_health)
+    app.router.add_get("/health",            handle_health)
+    app.router.add_get("/metrics",           handle_metrics)
 
     runner = web.AppRunner(app)
     await runner.setup()

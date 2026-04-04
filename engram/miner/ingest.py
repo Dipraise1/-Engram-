@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
-from engram.config import MAX_METADATA_BYTES, MAX_TEXT_CHARS, CANONICAL_MODEL_VERSION
+from engram.config import MAX_METADATA_BYTES, MAX_TEXT_CHARS, CANONICAL_MODEL_VERSION, MIN_INGEST_STAKE_TAO
 from engram.miner.embedder import Embedder
 from engram.miner.store import VectorRecord, VectorStore
 from engram.protocol import IngestSynapse
@@ -38,14 +38,23 @@ def _generate_cid(embedding: np.ndarray, metadata: dict[str, Any], model_version
 
 
 class IngestHandler:
-    def __init__(self, store: VectorStore, embedder: Embedder) -> None:
+    def __init__(
+        self,
+        store: VectorStore,
+        embedder: Embedder,
+        subtensor=None,
+        netuid: int | None = None,
+    ) -> None:
         self._store = store
         self._embedder = embedder
+        self._subtensor = subtensor   # optional — if set, stake check is enforced
+        self._netuid = netuid
 
-    def handle(self, synapse: IngestSynapse) -> IngestSynapse:
+    def handle(self, synapse: IngestSynapse, caller_hotkey: str | None = None) -> IngestSynapse:
         start = time.perf_counter()
 
         try:
+            self._check_stake(caller_hotkey)
             self._validate(synapse)
             embedding = self._resolve_embedding(synapse)
             cid = _generate_cid(embedding, synapse.metadata, synapse.model_version)
@@ -70,6 +79,25 @@ class IngestHandler:
         return synapse
 
     # ── Private ───────────────────────────────────────────────────────────────
+
+    def _check_stake(self, hotkey: str | None) -> None:
+        """Reject ingest requests from wallets with insufficient stake (anti-spam)."""
+        if self._subtensor is None or self._netuid is None:
+            return  # stake check disabled — local dev mode
+        if hotkey is None:
+            return  # no hotkey provided (SDK / direct HTTP) — allow
+        try:
+            stake = self._subtensor.get_stake_for_coldkey_and_hotkey(
+                coldkey_ss58=hotkey, hotkey_ss58=hotkey, netuid=self._netuid
+            )
+            tao = float(stake)
+        except Exception:
+            return  # can't check stake — allow (fail open to avoid blocking legit requests)
+
+        if tao < MIN_INGEST_STAKE_TAO:
+            raise ValueError(
+                f"Insufficient stake: τ{tao:.4f} < τ{MIN_INGEST_STAKE_TAO} minimum required"
+            )
 
     def _validate(self, synapse: IngestSynapse) -> None:
         if synapse.text is None and synapse.raw_embedding is None:

@@ -112,12 +112,13 @@ class QdrantStore(VectorStore):
         )
 
     def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K) -> list[SearchResult]:
-        hits = self._client.search(
+        from qdrant_client.models import SearchParams
+        results = self._client.query_points(
             collection_name=self._collection,
-            query_vector=query.tolist(),
+            query=query.tolist(),
             limit=top_k,
             with_payload=True,
-            search_params={"hnsw_ef": HNSW_EF_SEARCH},
+            search_params=SearchParams(hnsw_ef=HNSW_EF_SEARCH),
         )
         return [
             SearchResult(
@@ -125,7 +126,7 @@ class QdrantStore(VectorStore):
                 score=float(hit.score),
                 metadata={k: v for k, v in hit.payload.items() if k != "cid"},
             )
-            for hit in hits
+            for hit in results.points
         ]
 
     def get(self, cid: str) -> VectorRecord | None:
