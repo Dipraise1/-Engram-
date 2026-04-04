@@ -83,12 +83,14 @@ Track every milestone from local chain → testnet → mainnet launch.
 ## PHASE 3 — SDK & Developer Experience
 > External devs can use Engram programmatically
 
-- [ ] **3.1** SDK client tested against live local neurons
-      `from engram.sdk.client import EngramClient`
-      `client.ingest("text")`, `client.query("query")` round-trip
+- [x] **3.1** SDK client tested against live local neurons
+      `from engram.sdk import EngramClient`
+      `client.ingest("text")`, `client.query("query")` round-trip ✓
+      28/28 checks passing (test_sdk.py)
 
-- [ ] **3.2** SDK error handling
-      Timeouts, miner offline, bad CID — all handled gracefully with clear exceptions
+- [x] **3.2** SDK error handling
+      Timeouts, miner offline, bad CID — all handled gracefully with clear exceptions ✓
+      MinerOfflineError, IngestError, QueryError, InvalidCIDError all raised correctly
 
 - [ ] **3.3** JSONL batch ingest
       `engram ingest --file ./data/wikipedia_sample.jsonl`
@@ -301,7 +303,7 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 0 — Local Chain | COMPLETE ✓ |
 | 1 — Neurons E2E | COMPLETE ✓ (score=0.938) |
 | 2 — DHT/Replication | COMPLETE ✓ (multi-miner + repair targeting verified) |
-| 3 — SDK/DX | PARTIAL (CLI done) |
+| 3 — SDK/DX | PARTIAL (SDK 3.1+3.2 done, JSONL batch + status + PyPI pending) |
 | 4 — Testnet | BLOCKED (need TAO) |
 | 5 — Rust Core | PARTIAL (code done, not integrated) |
 | 6 — Production | PENDING |
@@ -333,3 +335,4 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 2026-04-04 | Phase 2.4: multi-miner DHT test PASS (2 miners, CID ingested+queried on both) |
 | 2026-04-04 | Phase 2.5: repair targeting 8/8 PASS (offline detection, DEGRADED status, repair routing) |
 | 2026-04-04 | PHASE 2 COMPLETE: DHT + replication fully verified |
+| 2026-04-04 | Phase 3.1/3.2: EngramClient SDK 28/28 tests passing (ingest, query, error handling) |
