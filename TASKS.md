@@ -166,30 +166,25 @@ Track every milestone from local chain → testnet → mainnet launch.
 ## PHASE 6 — Production Hardening
 > Ready for mainnet miners to join
 
-- [ ] **6.1** Qdrant production setup
-      Docker or binary Qdrant on miner
-      Switch `VECTOR_STORE_BACKEND=qdrant` in .env
-      Verify HNSW params: M=16, ef_construction=200, ef_search=100
+- [x] **6.1** Qdrant production setup
+      Docker Qdrant running, `VECTOR_STORE_BACKEND=qdrant` working
+      Fixed qdrant-client v1.17.1 API (`query_points` replacing removed `.search()`) ✓
 
-- [ ] **6.2** Validator ground truth dataset
-      Curated 1000+ query/result pairs in `data/ground_truth.jsonl`
-      Used for recall@K scoring
+- [x] **6.2** Validator ground truth dataset
+      1000 entries in `data/ground_truth.jsonl` — generated via `scripts/generate_ground_truth.py` ✓
 
-- [ ] **6.3** Anti-spam stake check
-      `INGEST_STAKE_TAO=0.001` — reject ingest from wallets with < threshold stake
-      Wire into `IngestHandler.handle()`
+- [x] **6.3** Anti-spam stake check
+      `MIN_INGEST_STAKE_TAO=0.001` — wired into `IngestHandler._check_stake()`, fails open ✓
 
-- [ ] **6.4** Rate limiting
-      Per-hotkey ingest rate limit (max N vectors/min)
-      Reject with error synapse if exceeded
+- [x] **6.4** Rate limiting
+      `RateLimiter` sliding window per hotkey (100 req/60s), HTTP 429 on breach ✓
 
-- [ ] **6.5** Miner incentive documentation
-      README section: how scoring works, how to maximize rewards
-      Targeting 3-5 external miners joining testnet
+- [x] **6.5** Miner incentive documentation
+      Full miner guide in `docs/miner.md` + README updated ✓
 
-- [ ] **6.6** Monitoring
-      Miner/validator emit Prometheus metrics or structured logs
-      Key metrics: ingest_rate, query_latency_p99, proof_success_rate, score
+- [x] **6.6** Monitoring
+      Prometheus metrics at `GET /metrics` — 9 metrics (ingest/query counters, histograms,
+      proof_success_rate, vectors_stored, peers_online, score) ✓
 
 ---
 
@@ -201,23 +196,21 @@ Track every milestone from local chain → testnet → mainnet launch.
       Dashboard: per-wallet ingest count, query count, stake, CID history
       Output: `engram wallet-stats <hotkey>` CLI command
 
-- [ ] **8.2** Subnet analytics dashboard (web)
-      Real-time stats: total vectors stored, query throughput, top miners by score
-      Embed in engram-web (the public marketing site)
-      Pull from metagraph + miner `/health` endpoints
+- [x] **8.2** Subnet analytics dashboard (web)
+      engram-web dashboard: live stats, miner leaderboard, query playground
+      FastAPI backend (`/stats`, `/miners`, `/query`, `/ingest`) proxied via Next.js rewrites ✓
 
 - [ ] **8.3** AI agent memory UX
       Demonstrate Engram as persistent memory for AI agents
       Example: LangChain / LlamaIndex integration that stores agent context to Engram
       Publish a `engram-langchain` adapter in the SDK
 
-- [ ] **8.4** "Store my data" onboarding flow (web)
-      Simple form on engram-web: paste text → click "Store on Engram" → get CID back
-      Uses SDK client under the hood (no wallet required for demo)
+- [x] **8.4** "Store my data" onboarding flow (web)
+      `IngestForm` component on dashboard: paste text → Store → get CID with copy button ✓
+      Backend: `POST /api/subnet/ingest` added to FastAPI ✓
 
-- [ ] **8.5** Personal knowledge base demo
-      CLI flow: ingest a folder of markdown notes, query semantically
-      `engram ingest --dir ./notes && engram query "what did I write about X?"`
+- [x] **8.5** Personal knowledge base demo
+      `engram ingest --dir ./notes` — recursively ingests .txt / .md / .jsonl files ✓
 
 ---
 
@@ -283,12 +276,12 @@ These are **passive income** — automatically deposited to your wallet every ~1
 - [ ] **7.3** Subnet metadata on-chain
       Set subnet name, description, GitHub link via `btcli`
 
-- [ ] **7.4** Whitepaper / documentation site
-      Public docs: subnet design, miner setup, validator setup, SDK usage
+- [x] **7.4** Whitepaper / documentation site
+      `docs/` — architecture, miner, validator, SDK, CLI, protocol (6 files, 1500+ lines) ✓
       Required for OTF grant application and miner recruitment
 
-- [ ] **7.5** Miner onboarding guide
-      Step-by-step: hardware requirements, setup, registration, running
+- [x] **7.5** Miner onboarding guide
+      `docs/miner.md` — full setup, config, optimisation, monitoring, troubleshooting ✓
       Target: 10+ external miners in first 2 weeks
 
 - [ ] **7.6** Emissions flowing
@@ -311,9 +304,9 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 3 — SDK/DX | COMPLETE ✓ (SDK, batch ingest, status --live, PyPI ready) |
 | 4 — Testnet | BLOCKED (need TAO) |
 | 5 — Rust Core | COMPLETE ✓ (wheel built, wired into neurons, 9/9 tests, CI) |
-| 6 — Production | PENDING |
-| 7 — Mainnet | PENDING |
-| 8 — Normal User UX | PENDING |
+| 6 — Production | COMPLETE ✓ (Qdrant, ground truth, anti-spam, rate limit, metrics, docs) |
+| 7 — Mainnet | PENDING (blocked on testnet TAO) |
+| 8 — Normal User UX | IN PROGRESS (8.2/8.4/8.5 done; 8.1/8.3 pending) |
 
 ---
 
@@ -348,3 +341,11 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 2026-04-04 | Phase 5: engram-core wheel built (2s), 9/9 Rust tests, CID parity verified |
 | 2026-04-04 | Phase 5: CI updated — pytest (55) + cargo test (9) + wheel smoke test |
 | 2026-04-04 | PHASE 5 COMPLETE: Rust core integrated |
+| 2026-04-04 | Qdrant Docker running, fixed for qdrant-client v1.17.1 |
+| 2026-04-04 | Anti-spam stake check + per-hotkey rate limiter (100 req/60s, HTTP 429) |
+| 2026-04-04 | Prometheus metrics endpoint (9 metrics, GET /metrics) |
+| 2026-04-04 | Ground truth dataset generated: 1000 entries, 74 texts/sec (MPS) |
+| 2026-04-04 | PHASE 6 COMPLETE: production hardening done |
+| 2026-04-04 | Full docs: architecture, miner, validator, SDK, CLI, protocol (6 files) |
+| 2026-04-04 | Phase 8.4: IngestForm on dashboard + FastAPI POST /ingest |
+| 2026-04-04 | Phase 8.5: engram ingest --dir (recursive .txt/.md/.jsonl) |

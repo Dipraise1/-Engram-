@@ -56,6 +56,7 @@ def _cid_short(cid: str) -> str:
 def ingest(
     text: str = typer.Argument(None, help="Text to embed and store."),
     file: Path = typer.Option(None, "--file", "-f", help="Path to a .txt or .jsonl file to ingest."),
+    dir: Path = typer.Option(None, "--dir", "-d", help="Directory of .txt / .md / .jsonl files to ingest recursively."),
     metadata: str = typer.Option("{}", "--meta", "-m", help='JSON metadata e.g. \'{"source":"arxiv"}\''),
     source: str = typer.Option("cli", "--source", "-s", help="Source label for metadata."),
 ):
@@ -75,19 +76,40 @@ def ingest(
 
     texts: list[tuple[str, dict]] = []
 
-    if file:
+    def _load_file(p: Path, base_meta: dict) -> list[tuple[str, dict]]:
+        file_meta = {**base_meta, "file": p.name}
+        records = []
+        if p.suffix == ".jsonl":
+            for line in p.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    try:
+                        obj = json.loads(line)
+                        records.append((obj["text"], obj.get("metadata", file_meta)))
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+        else:
+            content = p.read_text(encoding="utf-8").strip()
+            if content:
+                records.append((content, file_meta))
+        return records
+
+    if dir:
+        if not dir.is_dir():
+            console.print(f"[red]Not a directory: {dir}[/red]")
+            raise typer.Exit(1)
+        suffixes = {".txt", ".md", ".jsonl"}
+        files = sorted(p for p in dir.rglob("*") if p.suffix in suffixes and p.is_file())
+        if not files:
+            console.print(f"[yellow]No .txt / .md / .jsonl files found in {dir}[/yellow]")
+            raise typer.Exit(0)
+        for p in files:
+            texts.extend(_load_file(p, meta))
+        console.print(f"[dim]Loaded {len(texts)} records from {len(files)} files in {dir}[/dim]")
+    elif file:
         if not file.exists():
             console.print(f"[red]File not found: {file}[/red]")
             raise typer.Exit(1)
-        if file.suffix == ".jsonl":
-            for line in file.read_text().splitlines():
-                if line.strip():
-                    obj = json.loads(line)
-                    texts.append((obj["text"], obj.get("metadata", meta)))
-        else:
-            for line in file.read_text().splitlines():
-                if line.strip():
-                    texts.append((line.strip(), meta))
+        texts = _load_file(file, meta)
         console.print(f"[dim]Loaded {len(texts)} records from {file}[/dim]")
     elif text:
         texts = [(text, meta)]

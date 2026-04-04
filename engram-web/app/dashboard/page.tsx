@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   Database, Zap, Shield, Activity, Search, ArrowLeft,
-  RefreshCw, TrendingUp, Users, CheckCircle, XCircle, Clock
+  RefreshCw, TrendingUp, Users, CheckCircle, XCircle, Clock,
+  Upload, Copy, Check
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -103,6 +104,113 @@ function ScoreBar({ value }: { value: number }) {
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
       </div>
       <span className="text-xs text-slate-300 w-12 text-right font-mono">{value.toFixed(4)}</span>
+    </div>
+  );
+}
+
+// ── Ingest form ───────────────────────────────────────────────────────────────
+
+function IngestForm() {
+  const [text, setText] = useState("");
+  const [metadata, setMetadata] = useState("");
+  const [cid, setCid] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function handleIngest(e: React.FormEvent) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setLoading(true);
+    setError(null);
+    setCid(null);
+
+    let meta: Record<string, string> = {};
+    if (metadata.trim()) {
+      try { meta = JSON.parse(metadata); } catch { setError("Invalid JSON in metadata"); setLoading(false); return; }
+    }
+
+    try {
+      const res = await fetch("/api/subnet/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.trim(), metadata: meta }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Ingest failed");
+      setCid(data.cid);
+      setText("");
+      setMetadata("");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function copy() {
+    if (!cid) return;
+    navigator.clipboard.writeText(cid);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="bg-engram-card border border-engram-border rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <Upload className="w-4 h-4 text-engram-light" />
+        <h2 className="font-semibold text-white">Store on Engram</h2>
+        <span className="text-xs text-slate-500 ml-1">— paste any text, get a permanent CID</span>
+      </div>
+
+      <form onSubmit={handleIngest} className="space-y-3">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Paste any text to store permanently on the Engram network..."
+          rows={4}
+          className="w-full bg-engram-dark border border-engram-border rounded-lg px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-engram-purple/60 transition-colors resize-none"
+        />
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={metadata}
+            onChange={(e) => setMetadata(e.target.value)}
+            placeholder='Metadata (optional JSON) — e.g. {"source": "arxiv"}'
+            className="flex-1 bg-engram-dark border border-engram-border rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-engram-purple/60 transition-colors font-mono"
+          />
+          <button
+            type="submit"
+            disabled={loading || !text.trim()}
+            className="flex items-center gap-2 bg-engram-purple hover:bg-engram-violet disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+          >
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Store
+          </button>
+        </div>
+      </form>
+
+      {error && (
+        <div className="mt-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+          {error}
+        </div>
+      )}
+
+      {cid && (
+        <div className="mt-4 bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-3">
+          <div className="text-xs text-green-400 font-medium mb-1">Stored — Content ID:</div>
+          <div className="flex items-center gap-3">
+            <code className="text-sm font-mono text-green-300 flex-1 break-all">{cid}</code>
+            <button
+              onClick={copy}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors shrink-0"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -387,6 +495,9 @@ export default function Dashboard() {
             color="green"
           />
         </div>
+
+        {/* Ingest form */}
+        <IngestForm />
 
         {/* Query playground */}
         <QueryPlayground />

@@ -124,6 +124,50 @@ def get_miners():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _get_store_and_embedder():
+    """Shared helper — returns (FAISSStore, Embedder)."""
+    os.environ.setdefault("USE_LOCAL_EMBEDDER", "true")
+    from engram.miner.embedder import get_embedder
+    from engram.miner.store import FAISSStore
+    embedder = get_embedder()
+    index_path = os.getenv("FAISS_INDEX_PATH", "../data/engram.index")
+    os.makedirs(os.path.dirname(os.path.abspath(index_path)), exist_ok=True)
+    store = FAISSStore(dim=embedder.dim, index_path=index_path)
+    return store, embedder
+
+
+class IngestRequest(BaseModel):
+    text: str
+    metadata: dict = {}
+
+
+@app.post("/ingest")
+def run_ingest(req: IngestRequest):
+    """Embed and store text, return CID."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text must not be empty")
+    try:
+        from engram.miner.ingest import IngestHandler
+        from engram.protocol import IngestSynapse
+
+        store, embedder = _get_store_and_embedder()
+        handler = IngestHandler(store=store, embedder=embedder)
+        syn = IngestSynapse(text=req.text, metadata=req.metadata)
+        result = handler.handle(syn)
+
+        if hasattr(store, "save"):
+            store.save()
+
+        if result.error:
+            raise HTTPException(status_code=500, detail=result.error)
+
+        return {"cid": result.cid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class QueryRequest(BaseModel):
     query_text: str
     top_k: int = 5
@@ -136,16 +180,10 @@ def run_query(req: QueryRequest):
     Falls back to local FAISS store if no live subnet is reachable.
     """
     try:
-        os.environ.setdefault("USE_LOCAL_EMBEDDER", "true")
-
-        from engram.miner.embedder import get_embedder
-        from engram.miner.store import FAISSStore
         from engram.miner.query import QueryHandler
         from engram.protocol import QuerySynapse
 
-        embedder = get_embedder()
-        index_path = os.getenv("FAISS_INDEX_PATH", "../data/faiss.index")
-        store = FAISSStore(dim=embedder.dim, index_path=index_path)
+        store, embedder = _get_store_and_embedder()
 
         if store.count() == 0:
             return {"results": [], "error": "Store is empty — ingest some data first"}
