@@ -1,3 +1,0 @@
-<Bytes>On 2026-04-03 00:47:04.365074 WAT I am the owner of Engram subnet (netuid=2) on Bittensor. GitHub: https://github.com/Dipraise1/-Engram-</Bytes>
-	Signed by: 5FHGPfixYME1CK3EN5YGJzFvXBgtrEqrCnUPLCbvW4RG233k
-	Signature: 56325a2931bebe7b93c04ff95fe0f2d5267e11f7234dfdac1a1baed8957ad547410d45041790b990a0f12a6df63a092ad6534094dd1037019e19f5aab58d8286

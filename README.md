@@ -1,68 +1,73 @@
 # Engram
 
-**Decentralized Vector Database — Bittensor Subnet**
+**Decentralized Vector Database on Bittensor**
 
-> IPFS-style content-addressed storage for embeddings. The permanent, open semantic memory layer for AI agents and developers.
+> Permanent, content-addressed semantic memory for AI — no central authority, no single point of failure.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
+[![Bittensor](https://img.shields.io/badge/bittensor-subnet-orange.svg)](https://bittensor.com)
+[![Status](https://img.shields.io/badge/status-testnet-yellow.svg)](https://theengram.space)
+[![Docs](https://img.shields.io/badge/docs-theengram.space-blueviolet.svg)](https://theengram.space/docs)
 
 ---
 
 ## What is Engram?
 
-Engram is a Bittensor subnet that gives every embedding a permanent **content identifier (CID)** — the same insight IPFS had for files, applied to semantic knowledge.
+Engram applies the IPFS insight to AI memory: every piece of knowledge gets a **content identifier (CID)** derived deterministically from its embedding. The same text always maps to the same CID — regardless of which miner stores it.
 
-- **Store** text or raw embeddings once, retrieve them forever by semantic similarity
-- **Content-addressed** — the same knowledge always has the same CID, across every miner
-- **Decentralized** — embeddings are replicated across multiple miners (replication factor 3)
-- **Verifiable** — storage proofs (HMAC challenge-response) ensure miners actually hold the data
+- **Content-addressed** — `v1::a3f2b1...` uniquely identifies an embedding, not a location
+- **Decentralized** — embeddings are replicated across competing miners on Bittensor
+- **Incentivized** — miners earn TAO for provably storing and serving vectors
+- **Verifiable** — HMAC challenge-response proofs ensure miners actually hold the data
+
+```
+         store("The transformer architecture changed everything.")
+                              │
+                              ▼
+              ┌───────────────────────────────┐
+              │   CID: v1::a3f2b1c4d5e6f7...  │
+              │   Embedding: [0.02, -0.14, ...]│
+              │   Stored on: miners 3, 7, 11  │
+              └───────────────────────────────┘
+                              │
+                  query("how does attention work?")
+                              │
+                              ▼
+              ┌───────────────────────────────┐
+              │   score: 0.9821  cid: v1::a3f │
+              │   score: 0.8744  cid: v1::b2e │
+              │   score: 0.8291  cid: v1::c1d │
+              └───────────────────────────────┘
+```
 
 ---
 
 ## Quick Start
 
-### 1. Install
+### Install
+
+```bash
+pip install engram-subnet
+```
+
+Or from source:
 
 ```bash
 git clone https://github.com/Dipraise1/-Engram-.git
-cd Engram
-pip install -e ".[qdrant]"
+cd -Engram-
+pip install -e .
 ```
 
-### 2. Build the Rust core
-
-```bash
-pip install maturin
-cd engram-core && maturin develop --release && cd ..
-```
-
-### 3. Configure
+### Configure
 
 ```bash
 cp .env.example .env
-# Set WALLET_NAME, NETUID, OPENAI_API_KEY (or USE_LOCAL_EMBEDDER=true), etc.
+# Edit: WALLET_NAME, NETUID, SUBTENSOR_NETWORK
+# Optional: USE_LOCAL_EMBEDDER=true  (no OpenAI key needed)
 ```
 
-### 4. Start Qdrant
-
-```bash
-docker run -d -p 6333:6333 qdrant/qdrant
-```
-
-### 5. Run a miner
-
-```bash
-python neurons/miner.py
-```
-
-### 6. Run a validator
-
-```bash
-USE_LOCAL_EMBEDDER=true python scripts/generate_ground_truth.py --count 1000
-python neurons/validator.py
-```
-
----
-
-## SDK
+### Python SDK
 
 ```python
 from engram.sdk import EngramClient
@@ -82,26 +87,66 @@ for r in results:
 cids = client.batch_ingest_file("data/corpus.jsonl")
 ```
 
-Full reference: [docs/sdk.md](docs/sdk.md)
+### CLI
+
+```bash
+engram ingest "Some important knowledge"
+engram ingest --file corpus.jsonl
+engram ingest --dir ./docs          # recursive directory ingest
+
+engram query "what is self-attention?"
+
+engram status                        # local store info
+engram status --live --netuid 42     # live metagraph + miner health
+```
 
 ---
 
-## CLI
+## Framework Integrations
 
-```bash
-# Ingest text
-engram ingest "Some important knowledge"
-engram ingest --file corpus.jsonl
+```python
+# LangChain
+from engram.sdk.langchain import EngramVectorStore
+store = EngramVectorStore(miner_url="http://127.0.0.1:8091", embeddings=your_embeddings)
+retriever = store.as_retriever(search_kwargs={"k": 5})
 
-# Search
-engram query "what is self-attention?"
-
-# Check status
-engram status
-engram status --live --netuid 42   # live metagraph + miner health
+# LlamaIndex
+from engram.sdk.llama_index import EngramVectorStore
+store = EngramVectorStore(miner_url="http://127.0.0.1:8091")
+index = VectorStoreIndex.from_documents(
+    documents,
+    storage_context=StorageContext.from_defaults(vector_store=store)
+)
 ```
 
-Full reference: [docs/cli.md](docs/cli.md)
+---
+
+## Running a Miner
+
+```bash
+# Create wallet
+btcli wallet new_coldkey --wallet.name engram
+btcli wallet new_hotkey --wallet.name engram --wallet.hotkey miner
+
+# Register on subnet
+btcli subnet register --netuid 42 --wallet.name engram --wallet.hotkey miner
+
+# Start
+python neurons/miner.py --wallet.name engram --wallet.hotkey miner --netuid 42
+```
+
+Full setup: [docs/miner.md](docs/miner.md)
+
+---
+
+## Running a Validator
+
+```bash
+btcli subnet register --netuid 42 --wallet.name engram --wallet.hotkey validator
+python neurons/validator.py --wallet.name engram --wallet.hotkey validator --netuid 42
+```
+
+Full setup: [docs/validator.md](docs/validator.md)
 
 ---
 
@@ -115,22 +160,52 @@ composite_score = 0.50 × recall@10
                + 0.20 × proof_success_rate
 ```
 
-Weights are set on-chain every 600 seconds, proportional to normalised scores. Miners with proof success rate below 50% receive weight 0.
+Miners with proof success rate below 50% receive weight 0.
 
 ---
 
 ## Architecture
 
 ```
-Bittensor Chain  ←→  Validator  ←→  Miner (aiohttp JSON)
-                                       ├── Qdrant HNSW index
-                                       ├── OpenAI / local embedder
-                                       └── engram-core (Rust, PyO3)
-                                              ├── CID generation (SHA-256)
-                                              └── Storage proofs (HMAC)
+┌──────────────────────────────────────────────────────────────┐
+│                       Bittensor Chain                        │
+│               (metagraph · weight setting · TAO)             │
+└─────────────────────┬──────────────────────┬─────────────────┘
+                      │                      │
+              ┌───────▼──────┐    ┌──────────▼──────┐
+              │  Validator   │    │      Miner       │
+              │              │    │                  │
+              │ • challenge  │───▶│ • FAISS index    │
+              │ • score      │    │ • embedder       │
+              │ • set weights│◀───│ • proof service  │
+              └──────────────┘    └──────────┬───────┘
+                                             │
+                                   ┌─────────▼────────┐
+                                   │   engram-core     │
+                                   │   (Rust / PyO3)   │
+                                   │ • CID generation  │
+                                   │ • HMAC proofs     │
+                                   └──────────────────┘
 ```
 
-Full design: [docs/architecture.md](docs/architecture.md)
+---
+
+## Repository Structure
+
+```
+engram/
+├── engram/              # Python package
+│   ├── miner/           # Ingest, query, embedder, store, rate limiter
+│   ├── validator/       # Scoring, challenge, weight setting
+│   ├── sdk/             # Client, LangChain, LlamaIndex adapters
+│   └── protocol.py      # Synapse types (IngestSynapse, QuerySynapse)
+├── engram-core/         # Rust core — CID generation + storage proofs
+├── engram-web/          # Next.js frontend (theengram.space)
+├── neurons/             # miner.py, validator.py entry points
+├── scripts/             # Demo, ground truth generation, utilities
+├── tests/               # pytest suite
+└── docs/                # Architecture, SDK, CLI, protocol reference
+```
 
 ---
 
@@ -139,21 +214,20 @@ Full design: [docs/architecture.md](docs/architecture.md)
 | Guide | Description |
 |-------|-------------|
 | [docs/architecture.md](docs/architecture.md) | System design, data flows, component overview |
-| [docs/miner.md](docs/miner.md) | Miner setup, configuration, optimisation, monitoring |
+| [docs/miner.md](docs/miner.md) | Miner setup, configuration, optimization |
 | [docs/validator.md](docs/validator.md) | Validator setup and scoring loop |
 | [docs/sdk.md](docs/sdk.md) | Python SDK full reference |
 | [docs/cli.md](docs/cli.md) | CLI command reference |
-| [docs/protocol.md](docs/protocol.md) | Wire protocol, CID spec, scoring formulas, constants |
+| [docs/protocol.md](docs/protocol.md) | Wire protocol, CID spec, scoring formulas |
+
+Full web docs: **[theengram.space/docs](https://theengram.space/docs)**
 
 ---
 
 ## Tests
 
 ```bash
-# Python (55 tests)
 pytest tests/ -q
-
-# Rust (9 tests)
 cargo test --manifest-path engram-core/Cargo.toml --no-default-features
 ```
 
@@ -166,10 +240,19 @@ cargo test --manifest-path engram-core/Cargo.toml --no-default-features
 | Network | Bittensor (TAO) |
 | Type | Infrastructure / Storage |
 | Status | Testnet |
-| Canonical model | `text-embedding-3-small` (v1) |
-| Vector index | HNSW via Qdrant |
-| Replication factor | 3 |
-| Embedding dimension | 1536 |
+| Subnet UID | 42 (testnet) |
+| Canonical embedding model | `text-embedding-3-small` (1536d) |
+| Vector index | FAISS (IVF-flat) |
+| Proof type | HMAC-SHA256 challenge-response |
+
+---
+
+## Links
+
+- **Website** — [theengram.space](https://theengram.space)
+- **Docs** — [theengram.space/docs](https://theengram.space/docs)
+- **Dashboard** — [theengram.space/dashboard](https://theengram.space/dashboard)
+- **API** — [api.theengram.space/health](https://api.theengram.space/health)
 
 ---
 
