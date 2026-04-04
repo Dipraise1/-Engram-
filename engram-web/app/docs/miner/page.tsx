@@ -1,3 +1,4 @@
+"use client";
 import { DocPage, H1, H2, Lead, Code, Table, Note, Steps, Ic } from "../_components";
 
 export default function MinerPage() {

@@ -14,7 +14,6 @@ const NAV = [
     items: [
       { href: "/docs", label: "Introduction" },
       { href: "/docs/quickstart", label: "Quick Start" },
-      { href: "/docs/installation", label: "Installation" },
     ],
   },
   {
@@ -29,10 +28,7 @@ const NAV = [
   {
     group: "CLI",
     items: [
-      { href: "/docs/cli", label: "Overview" },
-      { href: "/docs/cli-ingest", label: "engram ingest" },
-      { href: "/docs/cli-query", label: "engram query" },
-      { href: "/docs/cli-status", label: "engram status" },
+      { href: "/docs/cli", label: "CLI Reference" },
     ],
   },
   {
@@ -58,7 +54,7 @@ const SEARCH_INDEX = [
   { title: "EngramClient", href: "/docs/sdk", desc: "Python SDK — ingest, query, batch, health" },
   { title: "LangChain Integration", href: "/docs/sdk-langchain", desc: "Use Engram as a LangChain VectorStore" },
   { title: "LlamaIndex Integration", href: "/docs/sdk-llama", desc: "Use Engram with LlamaIndex" },
-  { title: "CLI Reference", href: "/docs/cli", desc: "engram ingest, query, status commands" },
+  { title: "CLI Reference", href: "/docs/cli", desc: "engram ingest, query, status — all commands" },
   { title: "Run a Miner", href: "/docs/miner", desc: "Wallet, registration, config, start" },
   { title: "Run a Validator", href: "/docs/validator", desc: "Scoring loop, weight setting" },
   { title: "Protocol", href: "/docs/protocol", desc: "IngestSynapse, QuerySynapse, CID spec" },

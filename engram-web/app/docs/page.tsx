@@ -1,3 +1,4 @@
+"use client";
 import Link from "next/link";
 import { ArrowRight, Zap, Shield, Globe, Cpu } from "lucide-react";
 import { DocPage, H1, Lead, Code, Note } from "./_components";

@@ -1,3 +1,4 @@
+"use client";
 import { DocPage, H1, H2, Lead, P, Code, Note, Ic } from "../_components";
 
 export default function LangChainPage() {

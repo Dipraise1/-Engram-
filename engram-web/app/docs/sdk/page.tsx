@@ -1,3 +1,4 @@
+"use client";
 import { DocPage, H1, H2, H3, Lead, P, Code, Note, Table, Ic } from "../_components";
 
 export default function SDKPage() {
