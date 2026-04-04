@@ -73,7 +73,10 @@ class QdrantStore(VectorStore):
                 VectorParams,
             )
         except ImportError:
-            raise RuntimeError("qdrant-client not installed. Run: pip install qdrant-client")
+            raise RuntimeError(
+                "qdrant-client isn't installed. Install it with: pip install qdrant-client\n"
+                "Also make sure Qdrant is running: docker run -p 6333:6333 qdrant/qdrant"
+            )
 
         self._client = QdrantClient(host=host, port=port)
         self._collection = collection
@@ -173,7 +176,9 @@ class FAISSStore(VectorStore):
         try:
             import faiss
         except ImportError:
-            raise RuntimeError("faiss-cpu not installed. Run: pip install faiss-cpu")
+            raise RuntimeError(
+                "faiss-cpu isn't installed. Install it with: pip install faiss-cpu"
+            )
 
         import faiss
 
@@ -308,4 +313,7 @@ def build_store(backend: str = "qdrant") -> VectorStore:
         return FAISSStore(
             index_path=os.getenv("FAISS_INDEX_PATH"),
         )
-    raise ValueError(f"Unknown vector store backend: {backend!r}")
+    raise ValueError(
+        f"'{backend}' isn't a recognised vector store. "
+        "Set VECTOR_STORE_BACKEND to 'qdrant' or 'faiss' in your .env file."
+    )

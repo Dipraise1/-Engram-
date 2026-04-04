@@ -61,8 +61,8 @@ class RateLimiter:
         """Raise ValueError if the hotkey is rate-limited."""
         if not self.is_allowed(hotkey):
             raise ValueError(
-                f"Rate limit exceeded: max {self.max_requests} ingest requests "
-                f"per {self.window_secs}s per hotkey"
+                f"Slow down — you've sent {self.max_requests} requests in the last "
+                f"{self.window_secs}s. Wait a moment and try again."
             )
 
     def stats(self, hotkey: str) -> dict:

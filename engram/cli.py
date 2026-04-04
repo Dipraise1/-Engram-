@@ -67,7 +67,7 @@ def ingest(
     try:
         meta = json.loads(metadata)
     except json.JSONDecodeError:
-        console.print("[red]Invalid JSON in --meta[/red]")
+        console.print("[red]That doesn't look like valid JSON.[/red] Try: --meta '{\"source\": \"my-notes\"}'")
         raise typer.Exit(1)
 
     meta.setdefault("source", source)
@@ -95,26 +95,26 @@ def ingest(
 
     if dir:
         if not dir.is_dir():
-            console.print(f"[red]Not a directory: {dir}[/red]")
+            console.print(f"[red]'{dir}' isn't a directory.[/red]")
             raise typer.Exit(1)
         suffixes = {".txt", ".md", ".jsonl"}
         files = sorted(p for p in dir.rglob("*") if p.suffix in suffixes and p.is_file())
         if not files:
-            console.print(f"[yellow]No .txt / .md / .jsonl files found in {dir}[/yellow]")
+            console.print(f"[yellow]No .txt, .md, or .jsonl files found in '{dir}'. Nothing to ingest.[/yellow]")
             raise typer.Exit(0)
         for p in files:
             texts.extend(_load_file(p, meta))
         console.print(f"[dim]Loaded {len(texts)} records from {len(files)} files in {dir}[/dim]")
     elif file:
         if not file.exists():
-            console.print(f"[red]File not found: {file}[/red]")
+            console.print(f"[red]File not found:[/red] {file}")
             raise typer.Exit(1)
         texts = _load_file(file, meta)
         console.print(f"[dim]Loaded {len(texts)} records from {file}[/dim]")
     elif text:
         texts = [(text, meta)]
     else:
-        console.print("[red]Provide text as argument or --file[/red]")
+        console.print("[red]Nothing to ingest.[/red] Pass some text directly, or use --file to point at a file.")
         raise typer.Exit(1)
 
     table = Table(show_header=True, header_style="bold magenta")
@@ -133,7 +133,7 @@ def ingest(
         if result.cid:
             table.add_row(_cid_short(result.cid), t[:60], f"{elapsed:.0f}")
         else:
-            console.print(f"[red]FAILED:[/red] {result.error} | {t[:40]}")
+            console.print(f"[red]✗ Failed:[/red] {result.error}  [dim]({t[:40]}…)[/dim]")
             errors += 1
 
     # Save FAISS index after ingest
@@ -158,7 +158,7 @@ def query(
     store, embedder = _get_store_and_embedder()
 
     if store.count() == 0:
-        console.print("[yellow]Store is empty. Run 'engram ingest' first.[/yellow]")
+        console.print("[yellow]Nothing stored yet.[/yellow] Run [bold]engram ingest \"some text\"[/bold] first, then come back and search.")
         raise typer.Exit(0)
 
     handler = QueryHandler(store=store, embedder=embedder)
@@ -170,7 +170,7 @@ def query(
     elapsed = (time.perf_counter() - t0) * 1000
 
     if result.error:
-        console.print(f"[red]Query error: {result.error}[/red]")
+        console.print(f"[red]Search failed:[/red] {result.error}")
         raise typer.Exit(1)
 
     console.print(f"\n[bold]Query:[/bold] {text}")
@@ -234,7 +234,7 @@ def status(
         subtensor = bt.Subtensor(network=net)
         meta = subtensor.metagraph(netuid=uid)
     except Exception as exc:
-        console.print(f"[red]Failed to connect: {exc}[/red]")
+        console.print(f"[red]Couldn't connect to the chain:[/red] {exc}\nCheck that SUBTENSOR_NETWORK or SUBTENSOR_ENDPOINT is set correctly in your .env file.")
         return
 
     # ── Neuron table ──────────────────────────────────────────────────────────

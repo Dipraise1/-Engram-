@@ -125,7 +125,7 @@ async def run() -> None:
                     rate_limiter.check(caller_hotkey)
                 except ValueError as exc:
                     METRICS.ingest_total.labels(status="rate_limited").inc()
-                    return web.json_response({"error": str(exc)}, status=429)
+                    return web.json_response({"error": str(exc), "hint": "Wait a moment before sending more requests."}, status=429)
 
             synapse  = IngestSynapse(
                 text          = body.get("text"),
@@ -189,11 +189,11 @@ async def run() -> None:
             expires_at = int(body.get("expires_at", 0))
 
             if time.time() > expires_at:
-                return web.json_response({"error": "challenge expired"}, status=400)
+                return web.json_response({"error": "This challenge has expired — the validator will issue a fresh one shortly."}, status=400)
 
             record = store.get(cid)
             if record is None:
-                return web.json_response({"error": f"CID not found: {cid}"}, status=404)
+                return web.json_response({"error": f"Nothing stored under that CID ({cid[:20]}…). This miner may not hold a replica of it."}, status=404)
 
             embedding_hash, proof = _proof_response(nonce_hex, record.embedding.tolist())
             return web.json_response({"embedding_hash": embedding_hash, "proof": proof})

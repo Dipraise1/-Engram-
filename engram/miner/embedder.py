@@ -45,9 +45,15 @@ class Embedder:
             self._client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
             logger.info(f"Embedder: OpenAI backend ({CANONICAL_MODEL})")
         except ImportError:
-            raise RuntimeError("openai package not installed. Run: pip install openai")
+            raise RuntimeError(
+                "The OpenAI package isn't installed. Fix it with: pip install openai"
+            )
         except KeyError:
-            raise RuntimeError("OPENAI_API_KEY environment variable not set.")
+            raise RuntimeError(
+                "Missing OPENAI_API_KEY. Add it to your .env file:\n"
+                "  OPENAI_API_KEY=sk-...\n"
+                "Or switch to the local embedder: USE_LOCAL_EMBEDDER=true"
+            )
 
     def _init_local(self) -> None:
         try:
@@ -66,7 +72,8 @@ class Embedder:
             logger.info(f"Embedder: local sentence-transformers ({model_name}) on {device}")
         except ImportError:
             raise RuntimeError(
-                "sentence-transformers or torch not installed. Run: pip install sentence-transformers torch"
+                "Local embedding requires sentence-transformers and torch. Install them with:\n"
+                "  pip install sentence-transformers torch"
             )
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -76,7 +83,7 @@ class Embedder:
         """Embed a single text string. Returns a float32 numpy array."""
         text = text.strip()
         if not text:
-            raise ValueError("Cannot embed empty text.")
+            raise ValueError("Got empty text — there's nothing to embed here.")
 
         if self.backend == "openai":
             # Return copy to prevent accidental mutation of cached arrays

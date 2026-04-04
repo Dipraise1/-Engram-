@@ -74,7 +74,7 @@ class IngestHandler:
             synapse.error = str(e)
         except Exception as e:
             logger.error(f"Ingest error: {e}")
-            synapse.error = "internal error"
+            synapse.error = "Something went wrong on our end. The miner logged the details — try again in a moment."
 
         return synapse
 
@@ -96,18 +96,30 @@ class IngestHandler:
 
         if tao < MIN_INGEST_STAKE_TAO:
             raise ValueError(
-                f"Insufficient stake: τ{tao:.4f} < τ{MIN_INGEST_STAKE_TAO} minimum required"
+                f"Your wallet only has τ{tao:.4f} staked on this subnet. "
+                f"You need at least τ{MIN_INGEST_STAKE_TAO} to store data here. "
+                "Add more stake with: btcli stake add"
             )
 
     def _validate(self, synapse: IngestSynapse) -> None:
         if synapse.text is None and synapse.raw_embedding is None:
-            raise ValueError("Either 'text' or 'raw_embedding' must be provided.")
+            raise ValueError(
+                "Nothing to store — send either 'text' or 'raw_embedding' in the request."
+            )
         if synapse.text is not None and len(synapse.text) > MAX_TEXT_CHARS:
-            raise ValueError(f"Text exceeds maximum length of {MAX_TEXT_CHARS} chars.")
+            raise ValueError(
+                f"That text is too long ({len(synapse.text):,} chars). "
+                f"Please keep it under {MAX_TEXT_CHARS:,} characters. "
+                "Split large documents into smaller chunks before ingesting."
+            )
         if synapse.metadata:
             import json
-            if len(json.dumps(synapse.metadata).encode()) > MAX_METADATA_BYTES:
-                raise ValueError(f"Metadata exceeds {MAX_METADATA_BYTES} bytes.")
+            size = len(json.dumps(synapse.metadata).encode())
+            if size > MAX_METADATA_BYTES:
+                raise ValueError(
+                    f"Metadata is {size:,} bytes, which is over the {MAX_METADATA_BYTES:,}-byte limit. "
+                    "Try removing large values or moving the content into the text field instead."
+                )
 
     def _resolve_embedding(self, synapse: IngestSynapse) -> np.ndarray:
         if synapse.raw_embedding is not None:
