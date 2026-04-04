@@ -141,23 +141,25 @@ Track every milestone from local chain → testnet → mainnet launch.
 ## PHASE 5 — Rust Core Integration (engram-core)
 > High-performance CID and proof logic via PyO3
 
-- [ ] **5.1** Build engram-core wheel
-      `cd engram-core && maturin develop --release`
-      Verify: `import engram_core; engram_core.generate_cid(...)` works
+- [x] **5.1** Build engram-core wheel ✓
+      `cd engram-core && maturin develop --release` → 2s build
+      `import engram_core; engram_core.generate_cid(...)` works
 
-- [ ] **5.2** Replace Python CID generation with Rust
-      Swap `hashlib` CID in `ingest.py` → `engram_core.generate_cid()`
-      Benchmark: expect 10-50× speedup on large batches
+- [x] **5.2** Rust CID wired into ingest.py ✓
+      `ingest.py`: tries `engram_core.generate_cid()` first, falls back to Python
+      Cross-validated: Rust and Python produce identical CIDs
+      Note: FFI overhead (list conversion) means Python hashlib path faster for single CIDs;
+      Rust is the canonical spec, Python stays as fallback
 
-- [ ] **5.3** Replace Python proof verification with Rust
-      `challenge.py` → `engram_core.verify_response()`
+- [x] **5.3** Rust proof verification wired into challenge.py ✓
+      `challenge.py`: `engram_core.generate_challenge/response/verify_response`
+      Full challenge round-trip verified
 
-- [ ] **5.4** Rust unit tests passing in CI
-      `cargo test --no-default-features`
-      All 9 tests green
+- [x] **5.4** Rust unit tests passing ✓
+      `cargo test --no-default-features` → 9/9 green
 
-- [ ] **5.5** CI pipeline
-      GitHub Actions: `pytest` + `cargo test` on every push to main
+- [x] **5.5** CI pipeline updated ✓
+      GitHub Actions: `pytest` (55 tests) + `cargo test` (9 tests) + wheel build smoke test
 
 ---
 
@@ -308,7 +310,7 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 2 — DHT/Replication | COMPLETE ✓ (multi-miner + repair targeting verified) |
 | 3 — SDK/DX | COMPLETE ✓ (SDK, batch ingest, status --live, PyPI ready) |
 | 4 — Testnet | BLOCKED (need TAO) |
-| 5 — Rust Core | PARTIAL (code done, not integrated) |
+| 5 — Rust Core | COMPLETE ✓ (wheel built, wired into neurons, 9/9 tests, CI) |
 | 6 — Production | PENDING |
 | 7 — Mainnet | PENDING |
 | 8 — Normal User UX | PENDING |
@@ -343,3 +345,6 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 2026-04-04 | Phase 3.4: engram status --live shows metagraph neurons, stake, health probes |
 | 2026-04-04 | Phase 3.5: pyproject.toml finalized, pip install -e . works, engram CLI ready |
 | 2026-04-04 | PHASE 3 COMPLETE: SDK + CLI fully working |
+| 2026-04-04 | Phase 5: engram-core wheel built (2s), 9/9 Rust tests, CID parity verified |
+| 2026-04-04 | Phase 5: CI updated — pytest (55) + cargo test (9) + wheel smoke test |
+| 2026-04-04 | PHASE 5 COMPLETE: Rust core integrated |

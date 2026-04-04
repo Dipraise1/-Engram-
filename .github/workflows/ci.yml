@@ -6,6 +6,7 @@ on:
   pull_request:
 
 jobs:
+  # ── Python tests ─────────────────────────────────────────────────────────────
   python-tests:
     runs-on: ubuntu-latest
     steps:
@@ -23,8 +24,9 @@ jobs:
           pip install ".[dev]"
 
       - name: Run Python tests
-        run: python -m pytest -q
+        run: python -m pytest tests/ -q --tb=short
 
+  # ── Rust tests ───────────────────────────────────────────────────────────────
   rust-tests:
     runs-on: ubuntu-latest
     steps:
@@ -36,6 +38,42 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
 
-      - name: Run Rust tests
-        run: cargo test --workspace --all-targets
+      - name: Run Rust tests (no-default-features skips PyO3 extension build)
+        run: cargo test --manifest-path engram-core/Cargo.toml --no-default-features
+
+  # ── Build engram-core wheel (smoke test) ─────────────────────────────────────
+  build-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build engram-core wheel
+        run: maturin build --release --manifest-path engram-core/Cargo.toml
+
+      - name: Install and smoke-test wheel
+        run: |
+          pip install target/wheels/engram_core-*.whl
+          python -c "
+          import engram_core
+          cid = engram_core.generate_cid([0.1, 0.2, 0.3], {}, 'v1')
+          assert cid.startswith('v1::') and len(cid.split('::')[1]) == 64
+          challenge = engram_core.generate_challenge(cid, 30)
+          response = engram_core.generate_response(challenge, [0.1, 0.2, 0.3])
+          assert engram_core.verify_response(challenge, response, [0.1, 0.2, 0.3])
+          print('engram_core smoke test: PASS')
+          "
