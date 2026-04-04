@@ -191,19 +191,23 @@ Track every milestone from local chain → testnet → mainnet launch.
 ## PHASE 8 — Normal User Experience
 > Make Engram useful to everyday Bittensor users (not just miners/validators)
 
-- [ ] **8.1** Wallet pattern tracker
-      Track which hotkeys are ingesting/querying Engram over time
-      Dashboard: per-wallet ingest count, query count, stake, CID history
-      Output: `engram wallet-stats <hotkey>` CLI command
+- [x] **8.1** Wallet pattern tracker
+      `WalletTracker` persists per-hotkey ingest/query counts + CID history to JSON
+      Miner wires tracker into handle_ingest + handle_query
+      `GET /wallet-stats` + `GET /wallet-stats/{hotkey}` endpoints on miner + FastAPI
+      `engram wallet-stats [hotkey] [--live] [--netuid]` CLI command ✓
 
 - [x] **8.2** Subnet analytics dashboard (web)
       engram-web dashboard: live stats, miner leaderboard, query playground
       FastAPI backend (`/stats`, `/miners`, `/query`, `/ingest`) proxied via Next.js rewrites ✓
 
-- [ ] **8.3** AI agent memory UX
-      Demonstrate Engram as persistent memory for AI agents
-      Example: LangChain / LlamaIndex integration that stores agent context to Engram
-      Publish a `engram-langchain` adapter in the SDK
+- [x] **8.3** AI agent memory UX
+      `engram/sdk/langchain.py` — EngramVectorStore (LangChain adapter)
+        add_texts, add_documents, similarity_search, similarity_search_with_score,
+        from_texts classmethod, as_retriever(), health()
+      `engram/sdk/llama_index.py` — EngramVectorStore (LlamaIndex adapter)
+        add, delete (no-op), query, from_documents classmethod
+      `scripts/demo_agent_memory.py` — full demo of all 3 patterns ✓
 
 - [x] **8.4** "Store my data" onboarding flow (web)
       `IngestForm` component on dashboard: paste text → Store → get CID with copy button ✓
@@ -306,7 +310,7 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 5 — Rust Core | COMPLETE ✓ (wheel built, wired into neurons, 9/9 tests, CI) |
 | 6 — Production | COMPLETE ✓ (Qdrant, ground truth, anti-spam, rate limit, metrics, docs) |
 | 7 — Mainnet | PENDING (blocked on testnet TAO) |
-| 8 — Normal User UX | IN PROGRESS (8.2/8.4/8.5 done; 8.1/8.3 pending) |
+| 8 — Normal User UX | COMPLETE ✓ (all 5 tasks done) |
 
 ---
 
@@ -349,3 +353,6 @@ These are **passive income** — automatically deposited to your wallet every ~1
 | 2026-04-04 | Full docs: architecture, miner, validator, SDK, CLI, protocol (6 files) |
 | 2026-04-04 | Phase 8.4: IngestForm on dashboard + FastAPI POST /ingest |
 | 2026-04-04 | Phase 8.5: engram ingest --dir (recursive .txt/.md/.jsonl) |
+| 2026-04-04 | Phase 8.1: WalletTracker + engram wallet-stats CLI + /wallet-stats endpoints |
+| 2026-04-04 | Phase 8.3: LangChain + LlamaIndex VectorStore adapters + agent memory demo |
+| 2026-04-04 | PHASE 8 COMPLETE: all Normal User UX tasks done |

@@ -295,6 +295,122 @@ def status(
     console.print(f"\n[dim]Block: {subtensor.block} | {len(uids_list)} neurons registered[/dim]")
 
 
+@app.command(name="wallet-stats")
+def wallet_stats(
+    hotkey: str = typer.Argument(None, help="Hotkey SS58 address to inspect (omit for all wallets)."),
+    miner: str = typer.Option(None, "--miner", "-m", help="Miner URL (default: MINER_URL env or http://127.0.0.1:8091)."),
+    live: bool = typer.Option(False, "--live", "-l", help="Also fetch current TAO stake from the chain."),
+    netuid: int = typer.Option(None, "--netuid", help="Subnet UID for stake lookup (overrides NETUID env)."),
+):
+    """Show per-wallet ingest/query activity tracked by the miner."""
+    from engram.miner.wallet_tracker import WalletTracker
+
+    miner_url = miner or os.getenv("MINER_URL", "http://127.0.0.1:8091")
+
+    # Try to fetch live stats from the running miner first
+    import urllib.request as _urllib
+    import urllib.error as _urlerr
+
+    def _fetch(url: str):
+        try:
+            with _urllib.urlopen(url, timeout=5) as r:
+                import json as _json
+                return _json.loads(r.read())
+        except Exception:
+            return None
+
+    if hotkey:
+        data = _fetch(f"{miner_url}/wallet-stats/{hotkey}")
+    else:
+        data = _fetch(f"{miner_url}/wallet-stats")
+
+    # Fall back to reading the local file if the miner isn't running
+    if data is None:
+        tracker = WalletTracker()
+        if hotkey:
+            entry = tracker.get_stats(hotkey)
+            data = {**entry, "hotkey": hotkey}
+        else:
+            data = tracker.summary()
+
+    # ── Stake lookup ──────────────────────────────────────────────────────────
+    stakes: dict[str, float] = {}
+    if live:
+        try:
+            import bittensor as bt
+            net = os.getenv("SUBTENSOR_ENDPOINT") or os.getenv("SUBTENSOR_NETWORK", "test")
+            uid = netuid if netuid is not None else int(os.getenv("NETUID", "99"))
+            subtensor = bt.Subtensor(network=net)
+            meta = subtensor.metagraph(netuid=uid)
+            hotkeys_to_check = [hotkey] if hotkey else [r["hotkey"] for r in (data if isinstance(data, list) else [])]
+            for hk in hotkeys_to_check:
+                try:
+                    idx = [a.hotkey for a in meta.axons].index(hk)
+                    stakes[hk] = float(meta.S[idx])
+                except (ValueError, IndexError):
+                    stakes[hk] = 0.0
+        except Exception as exc:
+            console.print(f"[yellow]Could not fetch stake: {exc}[/yellow]")
+
+    # ── Display ───────────────────────────────────────────────────────────────
+    import time as _time
+
+    if hotkey:
+        # Single wallet detail view
+        entry = data if isinstance(data, dict) else {}
+        last = entry.get("last_seen", 0)
+        last_str = _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime(last)) if last else "never"
+        stake_str = f"  τ{stakes.get(hotkey, 0):.4f}" if live else ""
+
+        panel_body = (
+            f"[bold]Hotkey:[/bold]        {hotkey}\n"
+            f"[bold]Ingest count:[/bold]  {entry.get('ingest_count', 0)}\n"
+            f"[bold]Query count:[/bold]   {entry.get('query_count', 0)}\n"
+            f"[bold]CIDs tracked:[/bold]  {len(entry.get('cids', []))}\n"
+            f"[bold]Last seen:[/bold]     {last_str}"
+            + (f"\n[bold]Stake:[/bold]         {stake_str}" if live else "")
+        )
+        console.print(Panel(panel_body, title=f"[bold purple]Wallet Stats — {hotkey[:16]}…[/bold purple]", border_style="purple"))
+
+        cids = entry.get("cids", [])
+        if cids:
+            console.print(f"\n[bold]Recent CIDs ({min(len(cids), 20)} of {len(cids)}):[/bold]")
+            for c in cids[-20:]:
+                console.print(f"  [cyan]{c}[/cyan]")
+    else:
+        # Summary table
+        rows = data if isinstance(data, list) else []
+        if not rows:
+            console.print("[yellow]No wallet activity recorded yet.[/yellow]")
+            return
+
+        table = Table(show_header=True, header_style="bold magenta", title="Wallet Activity")
+        table.add_column("Hotkey", style="cyan")
+        table.add_column("Ingests", justify="right")
+        table.add_column("Queries", justify="right")
+        table.add_column("CIDs", justify="right")
+        if live:
+            table.add_column("Stake τ", justify="right")
+        table.add_column("Last seen")
+
+        for row in rows:
+            hk = row["hotkey"]
+            last = row.get("last_seen", 0)
+            last_str = _time.strftime("%m-%d %H:%M", _time.localtime(last)) if last else "—"
+            cells = [
+                hk[:20] + "…" if len(hk) > 22 else hk,
+                str(row.get("ingest_count", 0)),
+                str(row.get("query_count", 0)),
+                str(row.get("cid_count", 0)),
+            ]
+            if live:
+                cells.append(f"{stakes.get(hk, 0):.4f}")
+            cells.append(last_str)
+            table.add_row(*cells)
+
+        console.print(table)
+
+
 @app.command()
 def demo():
     """Run the local end-to-end demo."""

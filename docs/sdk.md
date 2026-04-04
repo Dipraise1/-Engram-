@@ -270,3 +270,103 @@ For `batch_ingest_file`, each line must be valid JSON with at minimum a `"text"`
 ```
 
 Lines missing `"text"` or with invalid JSON are silently skipped (captured in errors if `return_errors=True`).
+
+---
+
+## LangChain Integration
+
+`EngramVectorStore` implements the LangChain `VectorStore` interface.
+
+```bash
+pip install langchain-core engram-subnet
+```
+
+```python
+from langchain_openai import OpenAIEmbeddings
+from engram.sdk.langchain import EngramVectorStore
+
+embeddings = OpenAIEmbeddings()
+store = EngramVectorStore(miner_url="http://127.0.0.1:8091", embeddings=embeddings)
+
+# Store documents
+store.add_texts(
+    ["BERT uses bidirectional transformers.", "GPT generates text autoregressively."],
+    metadatas=[{"source": "paper"}, {"source": "paper"}],
+)
+
+# Similarity search
+docs = store.similarity_search("how does attention work?", k=5)
+for doc in docs:
+    print(doc.page_content, doc.metadata)
+
+# With scores
+docs_and_scores = store.similarity_search_with_score("transformers", k=3)
+for doc, score in docs_and_scores:
+    print(f"{score:.4f} — {doc.page_content}")
+
+# Create from existing texts (one-liner)
+store = EngramVectorStore.from_texts(texts, embedding=embeddings)
+
+# Use as a LangChain retriever in any chain
+retriever = store.as_retriever(search_kwargs={"k": 5})
+
+from langchain.chains import RetrievalQA
+chain = RetrievalQA.from_chain_type(llm=your_llm, retriever=retriever)
+answer = chain.run("What is Bittensor?")
+```
+
+If `embeddings` is omitted, the miner's built-in embedder is used (canonical model). Pass `embeddings` to use your own model (e.g. OpenAI, Cohere, HuggingFace).
+
+---
+
+## LlamaIndex Integration
+
+`EngramVectorStore` (from `engram.sdk.llama_index`) implements the LlamaIndex `BasePydanticVectorStore` interface.
+
+```bash
+pip install llama-index-core engram-subnet
+```
+
+```python
+from llama_index.core import VectorStoreIndex, Document
+from llama_index.core.storage.storage_context import StorageContext
+from engram.sdk.llama_index import EngramVectorStore
+
+# Build an index backed by Engram
+store = EngramVectorStore(miner_url="http://127.0.0.1:8091")
+storage_context = StorageContext.from_defaults(vector_store=store)
+
+documents = [
+    Document(text="Bittensor is a decentralised ML network."),
+    Document(text="TAO tokens reward miners and validators."),
+]
+index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)
+
+# Query
+query_engine = index.as_query_engine()
+response = query_engine.query("how does Bittensor distribute rewards?")
+print(response)
+```
+
+---
+
+## Agent Memory Pattern
+
+Use Engram as persistent memory for AI agents — facts and context survive across sessions:
+
+```python
+from engram.sdk import EngramClient
+
+client = EngramClient("http://127.0.0.1:8091")
+
+# Agent stores what it learns
+client.ingest("The user prefers concise responses.", metadata={"type": "preference"})
+client.ingest("The user is building a Bittensor subnet.", metadata={"type": "context"})
+
+# Before answering, agent retrieves relevant memory
+context = client.query("what is the user building?", top_k=3)
+for mem in context:
+    print(mem["metadata"]["type"], "→", mem["score"])
+```
+
+Run the full demo: `python scripts/demo_agent_memory.py`

@@ -29,6 +29,7 @@ from engram.miner.ingest import IngestHandler
 from engram.miner.metrics import METRICS, generate_latest
 from engram.miner.query import QueryHandler
 from engram.miner.rate_limiter import RateLimiter
+from engram.miner.wallet_tracker import WalletTracker
 from engram.miner.store import build_store
 from engram.protocol import IngestSynapse, QuerySynapse
 from engram.storage.dht import DHTRouter, Peer
@@ -86,7 +87,8 @@ async def run() -> None:
     ingest_handler = IngestHandler(store=store, embedder=embedder,
                                    subtensor=subtensor, netuid=netuid)
     query_handler  = QueryHandler(store=store, embedder=embedder)
-    rate_limiter   = RateLimiter()
+    rate_limiter    = RateLimiter()
+    wallet_tracker  = WalletTracker()
 
     logger.info(f"Vector store: {backend} | {store.count()} vectors loaded")
 
@@ -141,6 +143,8 @@ async def run() -> None:
                 METRICS.ingest_total.labels(status="ok").inc()
                 METRICS.vectors_stored.set(store.count())
                 replication_mgr.register(result.cid)
+                if caller_hotkey:
+                    wallet_tracker.record_ingest(caller_hotkey, result.cid)
                 if not router.should_store(result.cid):
                     logger.debug(f"DHT: not primary for {result.cid[:16]}… (stored anyway)")
 
@@ -155,6 +159,7 @@ async def run() -> None:
         t0 = _time.perf_counter()
         try:
             body    = await req.json()
+            caller_hotkey = body.get("hotkey")
             synapse = QuerySynapse(
                 query_text   = body.get("query_text"),
                 query_vector = body.get("query_vector"),
@@ -164,6 +169,8 @@ async def run() -> None:
             elapsed_ms = (_time.perf_counter() - t0) * 1000
             METRICS.query_duration.observe(elapsed_ms)
             METRICS.query_total.labels(status="error" if result.error else "ok").inc()
+            if caller_hotkey and not result.error:
+                wallet_tracker.record_query(caller_hotkey)
             return web.json_response({
                 "results"   : result.results or [],
                 "latency_ms": result.latency_ms,
@@ -195,6 +202,12 @@ async def run() -> None:
             logger.error(f"Challenge error: {exc}")
             return web.json_response({"error": str(exc)}, status=500)
 
+    async def handle_wallet_stats(req: web.Request) -> web.Response:
+        hotkey = req.match_info.get("hotkey", "")
+        if hotkey:
+            return web.json_response(wallet_tracker.get_stats(hotkey))
+        return web.json_response(wallet_tracker.summary())
+
     async def handle_health(req: web.Request) -> web.Response:
         METRICS.vectors_stored.set(store.count())
         METRICS.peers_online.set(router.peer_count())
@@ -217,11 +230,13 @@ async def run() -> None:
 
     # ── aiohttp server ────────────────────────────────────────────────────────
     app = web.Application()
-    app.router.add_post("/IngestSynapse",    handle_ingest)
-    app.router.add_post("/QuerySynapse",     handle_query)
-    app.router.add_post("/ChallengeSynapse", handle_challenge)
-    app.router.add_get("/health",            handle_health)
-    app.router.add_get("/metrics",           handle_metrics)
+    app.router.add_post("/IngestSynapse",           handle_ingest)
+    app.router.add_post("/QuerySynapse",            handle_query)
+    app.router.add_post("/ChallengeSynapse",        handle_challenge)
+    app.router.add_get("/health",                   handle_health)
+    app.router.add_get("/metrics",                  handle_metrics)
+    app.router.add_get("/wallet-stats",             handle_wallet_stats)
+    app.router.add_get("/wallet-stats/{hotkey}",    handle_wallet_stats)
 
     runner = web.AppRunner(app)
     await runner.setup()

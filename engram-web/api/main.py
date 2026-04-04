@@ -197,6 +197,32 @@ def run_query(req: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/wallet-stats")
+def get_all_wallet_stats():
+    """Return activity summary for all tracked wallets."""
+    try:
+        import sys, os as _os
+        sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", ".."))
+        from engram.miner.wallet_tracker import WalletTracker
+        tracker = WalletTracker()
+        return tracker.summary()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/wallet-stats/{hotkey}")
+def get_wallet_stats(hotkey: str):
+    """Return activity stats for a single hotkey."""
+    try:
+        import sys, os as _os
+        sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", ".."))
+        from engram.miner.wallet_tracker import WalletTracker
+        tracker = WalletTracker()
+        return {**tracker.get_stats(hotkey), "hotkey": hotkey}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "netuid": NETUID, "network": NETWORK}
