@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/subnet/:path*",
-      "destination": "https://api.engramdb.xyz/:path*"
+      "destination": "https://api.theengram.space/:path*"
     }
   ],
   "headers": [
