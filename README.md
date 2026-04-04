@@ -1,100 +1,50 @@
 # Engram
 
-**Decentralized Vector Database Subnet on Bittensor**
+**Decentralized Vector Database — Bittensor Subnet**
 
-> IPFS-style content-addressed storage for embeddings — the permanent, open semantic memory layer for AI agents and developers.
+> IPFS-style content-addressed storage for embeddings. The permanent, open semantic memory layer for AI agents and developers.
 
 ---
 
 ## What is Engram?
 
-Engram is a Bittensor subnet that gives every embedding a permanent content identifier (CID) — the same insight IPFS had for files, applied to semantic knowledge.
+Engram is a Bittensor subnet that gives every embedding a permanent **content identifier (CID)** — the same insight IPFS had for files, applied to semantic knowledge.
 
-- **Miners** store and serve embedding vectors (via Qdrant, a Rust-native vector DB)
-- **Validators** score miners on recall@K, query latency, and storage proof success rate
-- **Anyone** can ingest text or raw embeddings and retrieve them by semantic similarity — forever
-
----
-
-## Architecture
-
-```
-Python neurons (Bittensor protocol)
-         ↕
-Rust core (engram-core via PyO3)
-  ├── CID generation   — SHA-256 content addressing
-  └── Storage proofs   — HMAC challenge-response
-
-         ↕
-Qdrant vector store (Rust binary)
-  └── HNSW index — fast approximate nearest-neighbor
-```
+- **Store** text or raw embeddings once, retrieve them forever by semantic similarity
+- **Content-addressed** — the same knowledge always has the same CID, across every miner
+- **Decentralized** — embeddings are replicated across multiple miners (replication factor 3)
+- **Verifiable** — storage proofs (HMAC challenge-response) ensure miners actually hold the data
 
 ---
 
-## Project Structure
+## Quick Start
 
-```
-engram/
-├── engram-core/          # Rust — CID + storage proofs (PyO3)
-│   └── src/
-│       ├── lib.rs        # PyO3 module exports
-│       ├── cid.rs        # Content identifier generation
-│       └── proof.rs      # Storage challenge-response
-├── engram/               # Python package
-│   ├── protocol.py       # Bittensor Synapse definitions
-│   ├── config.py         # Subnet-wide constants
-│   ├── cid.py            # Python CID fallback
-│   ├── miner/
-│   │   ├── store.py      # Qdrant + FAISS vector store abstraction
-│   │   ├── embedder.py   # OpenAI / sentence-transformers
-│   │   ├── ingest.py     # IngestSynapse handler
-│   │   └── query.py      # QuerySynapse handler
-│   └── validator/
-│       ├── scorer.py     # recall@K, latency, proof scoring
-│       ├── challenge.py  # Storage proof dispatcher
-│       ├── ground_truth.py
-│       └── reward.py     # Weight-setting logic
-├── neurons/
-│   ├── miner.py          # Miner neuron entry point
-│   └── validator.py      # Validator neuron entry point
-├── sdk/
-│   └── client.py         # Python SDK
-├── tests/
-├── docker/
-├── scripts/
-│   └── seed_corpus.py    # Bootstrap corpus ingestion
-└── docker-compose.yml
+### 1. Install
+
+```bash
+git clone https://github.com/Dipraise1/-Engram-.git
+cd Engram
+pip install -e ".[qdrant]"
 ```
 
----
-
-## Quickstart
-
-### 1. Build the Rust core
+### 2. Build the Rust core
 
 ```bash
 pip install maturin
-cd engram-core && maturin develop --release
+cd engram-core && maturin develop --release && cd ..
 ```
 
-### 2. Install Python dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure environment
+### 3. Configure
 
 ```bash
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY, WALLET_NAME, NETUID, etc.
+# Set WALLET_NAME, NETUID, OPENAI_API_KEY (or USE_LOCAL_EMBEDDER=true), etc.
 ```
 
 ### 4. Start Qdrant
 
 ```bash
-docker run -p 6333:6333 qdrant/qdrant
+docker run -d -p 6333:6333 qdrant/qdrant
 ```
 
 ### 5. Run a miner
@@ -106,137 +56,105 @@ python neurons/miner.py
 ### 6. Run a validator
 
 ```bash
+USE_LOCAL_EMBEDDER=true python scripts/generate_ground_truth.py --count 1000
 python neurons/validator.py
 ```
 
 ---
 
-## SDK Usage
+## SDK
 
 ```python
-import bittensor as bt
-from engram.sdk.client import EngramClient
+from engram.sdk import EngramClient
 
-wallet = bt.wallet(name="my_wallet")
-client = EngramClient(wallet=wallet, netuid=99, network="finney")
+client = EngramClient("http://127.0.0.1:8091")
 
-# Store text
-cid = client.ingest("The attention mechanism in transformers...")
+# Store text — returns a permanent CID
+cid = client.ingest("The transformer architecture changed everything.")
+print(cid)  # v1::a3f2b1...
 
 # Semantic search
-results = client.query("how does self-attention work?", top_k=10)
+results = client.query("how does attention work?", top_k=5)
 for r in results:
-    print(r["score"], r["metadata"])
+    print(f"{r['score']:.4f}  {r['cid']}")
+
+# Batch ingest from JSONL
+cids = client.batch_ingest_file("data/corpus.jsonl")
 ```
+
+Full reference: [docs/sdk.md](docs/sdk.md)
 
 ---
 
-## Scoring Formula
-
-```
-score = 0.50 × recall@10  +  0.30 × latency_score  +  0.20 × proof_success_rate
-```
-
-Miners earn TAO by serving fast, accurate queries and proving they hold the data they claim to store.
-
----
-
-## Miner Incentive Guide
-
-### How scoring works
-
-Every ~60s validators run a full scoring round against each registered miner:
-
-| Component | Weight | How it's measured |
-|-----------|--------|-------------------|
-| `recall@10` | **50%** | Validator ingests N known embeddings, then queries with the same vectors and checks how many of the expected CIDs appear in the top-10 results |
-| `latency_score` | **30%** | `max(0, 1 − latency_ms / 1000)` — a 100ms response scores 0.90; 500ms scores 0.50; >1s scores 0 |
-| `proof_success_rate` | **20%** | Validator issues HMAC challenge-response challenges for stored CIDs; fraction that pass within TTL |
-
-Final weights on-chain are set proportional to composite scores across all miners in the subnet.
-
-### What to optimize
-
-**1. Recall@10 (highest impact)**
-
-- Use **Qdrant** (`VECTOR_STORE_BACKEND=qdrant`) — its HNSW index scales to millions of vectors while maintaining >99% recall, whereas FAISS in small indices can miss recently added nodes
-- Keep `hnsw_ef_search` ≥ 128 (default in `store.py`)
-- Don't prune or evict vectors — every stored CID is a potential query target
-
-**2. Query latency**
-
-- Run on a machine with ≥4 CPU cores; Qdrant's HNSW search is CPU-bound
-- Keep Qdrant on localhost (same machine as miner) to avoid network RTT
-- Set `MINER_PORT` to avoid port contention; don't run other heavy processes alongside the miner
-- MPS/CUDA for local embedder (`USE_LOCAL_EMBEDDER=true`) cuts embed time but OpenAI API (default) batches faster for bulk ingest
-
-**3. Proof success rate**
-
-- The miner must be reachable at `EXTERNAL_IP:MINER_PORT` at all times — use a static IP or dynamic DNS
-- Challenges expire after their TTL (typically 30s); ensure miner process doesn't stall on GC or I/O
-- The HMAC proof is computed over the stored embedding — never delete data after ingesting it
-
-### Recommended hardware
-
-| Tier | Specs | Expected score |
-|------|-------|----------------|
-| Minimum | 2 vCPU, 4 GB RAM, 20 GB SSD | ~0.70 |
-| Recommended | 4 vCPU, 16 GB RAM, 100 GB SSD | ~0.88 |
-| High-performance | 8 vCPU, 32 GB RAM, NVMe SSD | ~0.95+ |
-
-### Environment variables
+## CLI
 
 ```bash
-# Core
-WALLET_NAME=default
-WALLET_HOTKEY=default
-SUBTENSOR_NETWORK=finney     # or ws://your-node:9944
-NETUID=<subnet-uid>
-MINER_PORT=8091
-EXTERNAL_IP=<your-public-ip>
+# Ingest text
+engram ingest "Some important knowledge"
+engram ingest --file corpus.jsonl
 
-# Storage
-VECTOR_STORE_BACKEND=qdrant  # or faiss
-QDRANT_HOST=localhost
-QDRANT_PORT=6333
+# Search
+engram query "what is self-attention?"
 
-# Embedder
-USE_LOCAL_EMBEDDER=false      # true = sentence-transformers (offline)
-OPENAI_API_KEY=sk-...         # required if USE_LOCAL_EMBEDDER=false
-
-# Rate limiting (anti-spam)
-RATE_LIMIT_MAX_REQUESTS=100
-RATE_LIMIT_WINDOW_SECS=60
+# Check status
+engram status
+engram status --live --netuid 42   # live metagraph + miner health
 ```
 
-### Monitoring
-
-The miner exposes a Prometheus metrics endpoint at `GET /metrics`:
-
-```
-engram_ingest_total{status="ok|error|rate_limited|low_stake"}
-engram_query_total{status="ok|error"}
-engram_ingest_duration_ms  (histogram)
-engram_query_duration_ms   (histogram)
-engram_vectors_stored      (gauge)
-engram_proof_total{result="pass|fail|expired"}
-engram_proof_success_rate  (gauge, 0–1)
-engram_score               (gauge — last score from validator)
-engram_peers_online        (gauge — DHT peer count)
-```
-
-Add `http://<miner-ip>:8091/metrics` to your Prometheus scrape config, or just `curl` it directly.
+Full reference: [docs/cli.md](docs/cli.md)
 
 ---
 
-## Running Tests
+## Scoring
+
+Validators score miners every 120 seconds:
+
+```
+composite_score = 0.50 × recall@10
+               + 0.30 × latency_score     (1.0 at ≤100ms, 0.0 at ≥500ms)
+               + 0.20 × proof_success_rate
+```
+
+Weights are set on-chain every 600 seconds, proportional to normalised scores. Miners with proof success rate below 50% receive weight 0.
+
+---
+
+## Architecture
+
+```
+Bittensor Chain  ←→  Validator  ←→  Miner (aiohttp JSON)
+                                       ├── Qdrant HNSW index
+                                       ├── OpenAI / local embedder
+                                       └── engram-core (Rust, PyO3)
+                                              ├── CID generation (SHA-256)
+                                              └── Storage proofs (HMAC)
+```
+
+Full design: [docs/architecture.md](docs/architecture.md)
+
+---
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [docs/architecture.md](docs/architecture.md) | System design, data flows, component overview |
+| [docs/miner.md](docs/miner.md) | Miner setup, configuration, optimisation, monitoring |
+| [docs/validator.md](docs/validator.md) | Validator setup and scoring loop |
+| [docs/sdk.md](docs/sdk.md) | Python SDK full reference |
+| [docs/cli.md](docs/cli.md) | CLI command reference |
+| [docs/protocol.md](docs/protocol.md) | Wire protocol, CID spec, scoring formulas, constants |
+
+---
+
+## Tests
 
 ```bash
-# Python tests
-pytest tests/
+# Python (55 tests)
+pytest tests/ -q
 
-# Rust tests
-cargo test -p engram-core
+# Rust (9 tests)
+cargo test --manifest-path engram-core/Cargo.toml --no-default-features
 ```
 
 ---
@@ -247,11 +165,12 @@ cargo test -p engram-core
 |----------|-------|
 | Network | Bittensor (TAO) |
 | Type | Infrastructure / Storage |
-| Status | Proposal → Testnet |
-| Canonical model | text-embedding-3-small (v1) |
+| Status | Testnet |
+| Canonical model | `text-embedding-3-small` (v1) |
 | Vector index | HNSW via Qdrant |
-| Replication | 3× (Phase 1) |
+| Replication factor | 3 |
+| Embedding dimension | 1536 |
 
 ---
 
-*2026 — The idea is yours. Let's build it.*
+*2026 — Permanent semantic memory for AI.*
