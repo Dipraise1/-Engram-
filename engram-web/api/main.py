@@ -25,7 +25,7 @@ app = FastAPI(title="Engram Web API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://engramdb.xyz"],
+    allow_origins=["http://localhost:3000", "https://theengram.space", "https://www.theengram.space"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

@@ -114,12 +114,11 @@ function Stat({
         {label}
       </span>
       <span
-        className={`text-3xl font-light leading-none tracking-tight ${
+        className={`font-display text-3xl font-light leading-none tracking-tight ${
           accent
             ? "bg-gradient-to-r from-[#f87171] via-[#e040fb] to-[#7c3aed] bg-clip-text text-transparent"
             : "text-white"
         }`}
-        style={{ fontFamily: '"Cormorant Garamond", Georgia, serif' }}
       >
         {value}
       </span>
@@ -250,10 +249,7 @@ function MinerTable({ miners }: { miners: Miner[] }) {
     <div className="rounded-xl border border-[#1e1525] overflow-hidden">
       <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e1525] bg-[#0e0b12]">
         <div>
-          <h2
-            className="text-lg font-light text-white"
-            style={{ fontFamily: '"Cormorant Garamond", Georgia, serif' }}
-          >
+          <h2 className="font-display text-lg font-light text-white">
             Miner Leaderboard
           </h2>
           <p className="text-[11px] text-[#6b5a7e] mt-0.5">
@@ -394,10 +390,7 @@ export default function Dashboard() {
               home
             </Link>
             <span className="w-px h-3.5 bg-[#1e1525]" />
-            <span
-              className="text-white font-light text-base"
-              style={{ fontFamily: '"Cormorant Garamond", Georgia, serif' }}
-            >
+            <span className="font-display text-white font-light text-base">
               Engram
             </span>
             <span className="text-[10px] font-mono text-[#e040fb] border border-[#3a1a45] bg-[#e040fb]/5 px-2 py-0.5 rounded-full">
@@ -427,10 +420,7 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto px-6 py-10 space-y-10">
         {/* Title */}
         <div className="space-y-1">
-          <h1
-            className="text-4xl font-light text-white"
-            style={{ fontFamily: '"Cormorant Garamond", Georgia, serif' }}
-          >
+          <h1 className="font-display font-light text-white" style={{ fontSize: "clamp(36px, 4vw, 56px)", letterSpacing: "-0.01em", lineHeight: 1 }}>
             Network Overview
           </h1>
           <p className="text-sm text-[#6b5a7e]">
@@ -497,10 +487,7 @@ export default function Dashboard() {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-[#6b5a7e]" />
-            <h2
-              className="text-lg font-light text-white"
-              style={{ fontFamily: '"Cormorant Garamond", Georgia, serif' }}
-            >
+            <h2 className="font-display text-lg font-light text-white">
               Query Playground
             </h2>
           </div>

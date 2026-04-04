@@ -20,9 +20,9 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ['"Cormorant Garamond"', "Georgia", "serif"],
-        sans: ['"DM Sans"', "system-ui", "sans-serif"],
-        mono: ['"JetBrains Mono"', "monospace"],
+        display: ["var(--font-display)", "Georgia", "serif"],
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "monospace"],
       },
       animation: {
         "pulse-slow": "pulse 4s ease-in-out infinite",

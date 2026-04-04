@@ -207,10 +207,10 @@ function Hero() {
             </div>
 
             <div className="max-w-xl">
-              <h1 className="font-display font-semibold text-white leading-[1.0] tracking-tight mb-6"
-                style={{ fontSize: "clamp(42px, 6vw, 80px)" }}>
+              <h1 className="font-display font-light text-white leading-[0.95] mb-8"
+                style={{ fontSize: "clamp(52px, 7.5vw, 104px)", letterSpacing: "-0.01em" }}>
                 Memory for AI,<br />
-                <span className="gradient-text">owned by no one.</span>
+                <span className="gradient-text" style={{ fontStyle: "italic", fontWeight: 300 }}>owned by no one.</span>
               </h1>
               <p className="text-[17px] text-white/40 leading-relaxed mb-10 max-w-lg font-light">
                 Engram is a decentralized vector database on Bittensor. Store embeddings with cryptographic proofs — no AWS, no central authority.
