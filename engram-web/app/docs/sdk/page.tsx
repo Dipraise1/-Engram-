@@ -1,5 +1,5 @@
 "use client";
-import { DocPage, H1, H2, H3, Lead, P, Code, Note, Table, Ic } from "../_components";
+import { DocPage, H1, H2, H3, Lead, P, Code, Note, Table, Ic } from "../ui";
 
 export default function SDKPage() {
   return (

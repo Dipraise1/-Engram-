@@ -1,5 +1,5 @@
 "use client";
-import { DocPage, H1, H2, Lead, Code, Table, Note, Steps, Ic } from "../_components";
+import { DocPage, H1, H2, Lead, P, Code, Table, Note, Steps, Ic } from "../ui";
 
 export default function ValidatorPage() {
   return (

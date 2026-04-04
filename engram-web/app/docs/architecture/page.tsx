@@ -1,5 +1,5 @@
 "use client";
-import { DocPage, H1, H2, Lead, P, Code, Note } from "../_components";
+import { DocPage, H1, H2, Lead, P, Code, Note } from "../ui";
 
 export default function ArchitecturePage() {
   return (

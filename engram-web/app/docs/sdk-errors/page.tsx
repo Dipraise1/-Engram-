@@ -1,5 +1,5 @@
 "use client";
-import { DocPage, H1, H2, Lead, Code, Table, Ic } from "../_components";
+import { DocPage, H1, H2, Lead, Code, Table, Ic } from "../ui";
 
 export default function ErrorsPage() {
   return (
