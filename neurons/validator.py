@@ -7,13 +7,18 @@ Periodically:
   3. Sets weights on-chain via Bittensor
 """
 
-import asyncio
 import os
+
+# Load env BEFORE any engram imports so config.py reads correct EMBEDDING_DIM
+from dotenv import load_dotenv
+load_dotenv(os.getenv("ENV_FILE", ".env.validator"), override=True)
+load_dotenv(override=False)  # fallback to .env for any missing keys
+
+import asyncio
 import time
 
 import bittensor as bt
 import nest_asyncio
-from dotenv import load_dotenv
 
 nest_asyncio.apply()
 
@@ -73,7 +78,6 @@ from engram.storage.dht import DHTRouter, Peer
 from engram.storage.replication import ReplicationManager
 from engram.utils.logging import setup_logging
 
-load_dotenv()
 setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 
 EVAL_INTERVAL = 120   # seconds between scoring rounds

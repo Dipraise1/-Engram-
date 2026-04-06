@@ -11,16 +11,21 @@ Endpoints:
   GET  /health          → liveness probe
 """
 
+import os
+
+# Load env BEFORE any engram imports so config.py reads correct EMBEDDING_DIM
+from dotenv import load_dotenv
+load_dotenv(os.getenv("ENV_FILE", ".env.miner"), override=True)
+load_dotenv(override=False)  # fallback to .env for any missing keys
+
 import asyncio
 import hashlib
 import hmac as _hmac
-import os
 import struct
 import time
 
 import bittensor as bt
 from aiohttp import web
-from dotenv import load_dotenv
 from loguru import logger
 
 from engram.config import SUBNET_VERSION
@@ -36,7 +41,6 @@ from engram.storage.dht import DHTRouter, Peer
 from engram.storage.replication import ReplicationManager
 from engram.utils.logging import setup_logging
 
-load_dotenv()
 setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 
 
@@ -91,6 +95,24 @@ async def run() -> None:
     wallet_tracker  = WalletTracker()
 
     logger.info(f"Vector store: {backend} | {store.count()} vectors loaded")
+
+    # ── Seed ground truth vectors (testnet bootstrap) ─────────────────────────
+    gt_path = os.getenv("GROUND_TRUTH_PATH", "./data/ground_truth.jsonl")
+    if store.count() == 0 and os.path.exists(gt_path):
+        import json
+        import numpy as np
+        from engram.miner.store import VectorRecord
+        seeded = 0
+        with open(gt_path) as f:
+            for line in f:
+                rec = json.loads(line)
+                store.upsert(VectorRecord(
+                    cid=rec["cid"],
+                    embedding=np.array(rec["embedding"], dtype=np.float32),
+                    metadata={},
+                ))
+                seeded += 1
+        logger.info(f"Seeded {seeded} ground truth vectors into store")
 
     # ── DHT + Replication ─────────────────────────────────────────────────────
     our_uid = next(

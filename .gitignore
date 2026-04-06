@@ -1,4 +1,6 @@
 .env
+.env.miner
+.env.validator
 *.pyc
 __pycache__/
 *.egg-info/
