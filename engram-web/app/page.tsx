@@ -966,7 +966,7 @@ function Community() {
               <p className="text-[15px] text-white/40 leading-relaxed mb-8 font-light max-w-md">
                 We&apos;re building in public. Discuss the protocol, get help running a miner, share feedback, and be part of the earliest community on the subnet.
               </p>
-              <a href="https://discord.gg/bittensor" target="_blank" rel="noopener noreferrer"
+              <a href="https://discord.gg/ehpvsyTyJ" target="_blank" rel="noopener noreferrer"
                 className="group/btn inline-flex items-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold text-[13px] px-6 py-3 rounded-full transition-colors font-sans">
                 <DiscordIcon className="w-4 h-4" />
                 Join Discord
@@ -1069,7 +1069,7 @@ function Footer() {
             <a href="#roadmap" className="hover:text-white/60 transition-colors font-mono">roadmap</a>
             <a href="#sdk" className="hover:text-white/60 transition-colors font-mono">sdk</a>
             <Link href="/docs" className="hover:text-white/60 transition-colors font-mono">docs</Link>
-            <a href="https://discord.gg/bittensor" target="_blank" rel="noopener noreferrer"
+            <a href="https://discord.gg/ehpvsyTyJ" target="_blank" rel="noopener noreferrer"
               className="hover:text-white/60 transition-colors flex items-center gap-1 font-mono">
               discord <ExternalLink className="w-3 h-3" />
             </a>
