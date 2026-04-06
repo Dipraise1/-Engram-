@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="7" fill="#0e0913"/>
+  <!-- E mark: vertical bar + 3 horizontal bars -->
+  <rect x="8" y="7" width="3" height="18" rx="1.5" fill="#e040fb"/>
+  <rect x="8" y="7" width="14" height="3" rx="1.5" fill="#e040fb"/>
+  <rect x="8" y="14.5" width="11" height="3" rx="1.5" fill="#e040fb"/>
+  <rect x="8" y="22" width="14" height="3" rx="1.5" fill="#e040fb"/>
+</svg>

@@ -28,17 +28,26 @@ export const metadata: Metadata = {
   title: "Engram — Decentralized Vector Database",
   description:
     "The first decentralized, content-addressed vector database built on Bittensor. Store, retrieve, and prove ownership of embeddings — without a central authority.",
-  keywords: ["vector database", "bittensor", "decentralized", "embeddings", "semantic search", "AI"],
+  keywords: ["vector database", "bittensor", "decentralized", "embeddings", "semantic search", "AI", "TAO"],
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.svg",
+    apple: "/logo.png",
+  },
   openGraph: {
     title: "Engram — Decentralized Vector Database",
-    description: "Store and retrieve embeddings on Bittensor's decentralized network.",
+    description: "The first decentralized, content-addressed vector database built on Bittensor. Store and retrieve embeddings with cryptographic proofs.",
     type: "website",
     url: "https://theengram.space",
+    images: [{ url: "https://theengram.space/logo.png", width: 512, height: 512 }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Engram — Decentralized Vector Database",
-    description: "The first decentralized vector DB on Bittensor.",
+    description: "The first decentralized vector DB on Bittensor. Store embeddings with cryptographic proofs — no AWS, no central authority.",
+    images: ["https://theengram.space/logo.png"],
   },
 };
 
