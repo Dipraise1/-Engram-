@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "engram-subnet"
-version = "0.1.0"
+version = "0.1.1"
 description = "Decentralized IPFS-style vector database on Bittensor — the permanent semantic memory layer for AI."
 readme = "README.md"
 license = { text = "MIT" }
@@ -25,26 +25,42 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
 ]
 
-# Core runtime deps — everything needed to run a miner, validator, or SDK client
+# SDK-only deps — lightweight, no PyTorch, no Bittensor
+# `pip install engram-subnet` gives you EngramClient only
 dependencies = [
-    "bittensor>=7.4.0",
-    "faiss-cpu>=1.8.0",
-    "sentence-transformers>=3.0.0",
     "numpy>=1.26.0",
     "pydantic>=2.7.0",
-    "rich>=13.7.0",
-    "typer>=0.12.0",
     "python-dotenv>=1.0.0",
     "loguru>=0.7.2",
-    "aiohttp>=3.9.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
-# Production vector store (Qdrant replaces FAISS for mainnet miners)
+# Full miner + validator runtime (pulls bittensor, faiss, sentence-transformers)
+node = [
+    "bittensor>=7.4.0",
+    "faiss-cpu>=1.8.0",
+    "sentence-transformers>=3.0.0",
+    "aiohttp>=3.9.0",
+    "rich>=13.7.0",
+    "typer>=0.12.0",
+]
+
+# Production vector store
 qdrant = ["qdrant-client>=1.9.0"]
 
-# OpenAI embeddings instead of local sentence-transformers
+# OpenAI embeddings
 openai = ["openai>=1.30.0"]
+
+# Local sentence-transformers embedder for SDK private namespace encryption
+local-embedder = ["sentence-transformers>=3.0.0"]
+
+# CLI (engram ingest / query / status / init)
+cli = [
+    "rich>=13.7.0",
+    "typer>=0.12.0",
+    "python-dotenv>=1.0.0",
+]
 
 # Full dev toolchain
 dev = [
@@ -56,9 +72,9 @@ dev = [
     "maturin>=1.5.0",
 ]
 
-# Install everything
+# Everything — miners, validators, SDK, CLI
 all = [
-    "engram-subnet[qdrant,openai,dev]",
+    "engram-subnet[node,qdrant,openai,local-embedder,cli,dev]",
 ]
 
 [project.urls]

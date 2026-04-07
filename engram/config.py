@@ -7,7 +7,7 @@ from typing import Literal
 
 # ── Identity ───────────────────────────────────────────────────────────────────
 SUBNET_NAME = "engram"
-SUBNET_VERSION = "0.1.0"
+SUBNET_VERSION = "0.1.1"
 SPEC_VERSION = 100  # bump on any breaking protocol change
 
 # ── Canonical Embedding Model (locked per subnet epoch) ───────────────────────
