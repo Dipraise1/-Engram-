@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, P, Code, Note, Steps, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "Quick Start",
+  description:
+    "Install Engram and run your first semantic search in under 2 minutes. pip install engram-subnet, ingest text, and query with Python or the CLI.",
+  alternates: { canonical: "https://theengram.space/docs/quickstart" },
+  openGraph: {
+    title: "Quick Start — Engram",
+    description: "Install, ingest your first text, and run a semantic query in under 2 minutes.",
+    url: "https://theengram.space/docs/quickstart",
+  },
+};
 
 export default function QuickStart() {
   return (

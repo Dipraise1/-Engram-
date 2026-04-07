@@ -48,6 +48,13 @@ MIN_INGEST_STAKE_TAO: float = 0.001
 MAX_METADATA_BYTES: int = 4096
 MAX_TEXT_CHARS: int = 8192
 
+# ── Security ───────────────────────────────────────────────────────────────────
+# REQUIRE_HOTKEY_SIG=true  — reject requests without a valid sr25519 signature
+# REQUIRE_HOTKEY_SIG=false — warn but allow (default; backward compatible)
+# ALLOWED_VALIDATOR_HOTKEYS — comma-separated SS58 hotkeys permitted to call the miner
+#   Leave empty to allow all hotkeys (still subject to stake check + rate limit).
+# See engram/miner/auth.py for the signing protocol.
+
 # ── DHT ───────────────────────────────────────────────────────────────────────
 DHT_BUCKET_SIZE: int = 20
 DHT_ALPHA: int = 3

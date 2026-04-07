@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, Code, Note, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "LlamaIndex Integration",
+  description:
+    "Use Engram with LlamaIndex as a VectorStore. Integrate decentralized embedding storage into your LlamaIndex RAG pipelines with a simple drop-in adapter.",
+  alternates: { canonical: "https://theengram.space/docs/sdk-llama" },
+  openGraph: {
+    title: "LlamaIndex Integration — Engram",
+    description: "Drop-in LlamaIndex VectorStore adapter for decentralized embedding storage.",
+    url: "https://theengram.space/docs/sdk-llama",
+  },
+};
 
 export default function LlamaIndexPage() {
   return (

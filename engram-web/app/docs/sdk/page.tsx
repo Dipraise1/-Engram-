@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, H3, Lead, P, Code, Note, Table, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "EngramClient Python SDK",
+  description:
+    "Complete reference for the EngramClient Python SDK. Ingest text, run semantic queries, batch operations, auto-discovery, and private namespace encryption.",
+  alternates: { canonical: "https://theengram.space/docs/sdk" },
+  openGraph: {
+    title: "EngramClient Python SDK — Engram",
+    description: "Ingest, query, batch, and auto-discover vectors with the Engram Python SDK.",
+    url: "https://theengram.space/docs/sdk",
+  },
+};
 
 export default function SDKPage() {
   return (

@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, Code, Table, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "SDK Exceptions",
+  description:
+    "Reference for Engram SDK exceptions: EngramError, ConnectionError, AuthError, StorageError, and more. Understand and handle errors in your integration.",
+  alternates: { canonical: "https://theengram.space/docs/sdk-errors" },
+  openGraph: {
+    title: "SDK Exceptions — Engram",
+    description: "Full reference for Engram SDK error types and how to handle them.",
+    url: "https://theengram.space/docs/sdk-errors",
+  },
+};
 
 export default function ErrorsPage() {
   return (

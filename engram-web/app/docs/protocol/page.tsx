@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, P, Code, Table, Note, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "Protocol Reference",
+  description:
+    "Engram protocol reference: IngestSynapse, QuerySynapse, CID specification, storage proof challenges, scoring, and the on-chain data flow between miners and validators.",
+  alternates: { canonical: "https://theengram.space/docs/protocol" },
+  openGraph: {
+    title: "Protocol Reference — Engram",
+    description: "IngestSynapse, QuerySynapse, CID spec, storage proofs, and scoring protocol.",
+    url: "https://theengram.space/docs/protocol",
+  },
+};
 
 export default function ProtocolPage() {
   return (

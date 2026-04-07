@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, P, Code, Table, Note, Steps, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "Run a Validator",
+  description:
+    "Guide to running an Engram validator on Bittensor subnet 450. Learn about the scoring loop, recall metrics, latency scoring, storage proofs, and weight setting.",
+  alternates: { canonical: "https://theengram.space/docs/validator" },
+  openGraph: {
+    title: "Run an Engram Validator",
+    description: "Scoring loop, weight setting, and validator setup on Bittensor subnet 450.",
+    url: "https://theengram.space/docs/validator",
+  },
+};
 
 export default function ValidatorPage() {
   return (

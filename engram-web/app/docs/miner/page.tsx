@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, P, Code, Table, Note, Steps, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "Run a Miner",
+  description:
+    "Step-by-step guide to running an Engram miner node on Bittensor subnet 450. Covers wallet setup, registration, configuration, and earning TAO rewards.",
+  alternates: { canonical: "https://theengram.space/docs/miner" },
+  openGraph: {
+    title: "Run an Engram Miner",
+    description: "Wallet setup, registration on subnet 450, and start earning TAO as a miner.",
+    url: "https://theengram.space/docs/miner",
+  },
+};
 
 export default function MinerPage() {
   return (

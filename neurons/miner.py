@@ -35,6 +35,7 @@ from engram.miner.ingest import IngestHandler
 from engram.miner.metrics import METRICS, generate_latest
 from engram.miner.namespace import NamespaceRegistry
 from engram.miner.query import QueryHandler
+from engram.miner.auth import AuthError, verify_request
 from engram.miner.rate_limiter import RateLimiter
 from engram.miner.wallet_tracker import WalletTracker
 from engram.miner.store import build_store
@@ -151,8 +152,14 @@ async def run() -> None:
         import time as _time
         t0 = _time.perf_counter()
         try:
-            body          = await req.json()
-            caller_hotkey = body.get("hotkey")
+            body = await req.json()
+
+            # ── Auth ─────────────────────────────────────────────────────────
+            try:
+                caller_hotkey = verify_request(body, "IngestSynapse")
+            except AuthError as exc:
+                METRICS.ingest_total.labels(status="auth_error").inc()
+                return web.json_response({"error": str(exc)}, status=401)
 
             # Rate-limit every request — keyed by hotkey if provided, else by peer IP.
             # This prevents bypass by simply omitting the hotkey field.
@@ -196,8 +203,23 @@ async def run() -> None:
         import time as _time
         t0 = _time.perf_counter()
         try:
-            body    = await req.json()
-            caller_hotkey = body.get("hotkey")
+            body = await req.json()
+
+            # ── Auth ─────────────────────────────────────────────────────────
+            try:
+                caller_hotkey = verify_request(body, "QuerySynapse")
+            except AuthError as exc:
+                METRICS.query_total.labels(status="auth_error").inc()
+                return web.json_response({"error": str(exc)}, status=401)
+
+            # ── Rate limit ────────────────────────────────────────────────────
+            rl_key = _rate_limit_key(req, caller_hotkey)
+            try:
+                rate_limiter.check(rl_key)
+            except ValueError as exc:
+                METRICS.query_total.labels(status="rate_limited").inc()
+                return web.json_response({"error": str(exc)}, status=429)
+
             synapse = QuerySynapse(
                 query_text    = body.get("query_text"),
                 query_vector  = body.get("query_vector"),
@@ -223,9 +245,24 @@ async def run() -> None:
 
     async def handle_challenge(req: web.Request) -> web.Response:
         try:
-            body      = await req.json()
-            cid       = body.get("cid", "")
-            nonce_hex = body.get("nonce_hex", "")
+            body = await req.json()
+
+            # ── Auth — only registered validators should request proofs ───────
+            try:
+                verify_request(body, "ChallengeSynapse")
+            except AuthError as exc:
+                return web.json_response({"error": str(exc)}, status=401)
+
+            # ── Rate limit ────────────────────────────────────────────────────
+            caller_hotkey = body.get("hotkey")
+            rl_key = _rate_limit_key(req, caller_hotkey)
+            try:
+                rate_limiter.check(rl_key)
+            except ValueError as exc:
+                return web.json_response({"error": str(exc)}, status=429)
+
+            cid        = body.get("cid", "")
+            nonce_hex  = body.get("nonce_hex", "")
             expires_at = int(body.get("expires_at", 0))
 
             if time.time() > expires_at:
@@ -308,17 +345,20 @@ async def run() -> None:
         return web.json_response(wallet_tracker.summary())
 
     async def handle_health(req: web.Request) -> web.Response:
-        METRICS.vectors_stored.set(store.count())
-        METRICS.peers_online.set(router.peer_count())
-        return web.json_response({
-            "status": "ok",
-            "vectors": store.count(),
-            "uid": our_uid,
-            "peers": router.peer_count(),
-        })
+        # Keep health minimal — just a liveness signal, no internal data.
+        # Detailed stats are available on /metrics (localhost only).
+        return web.json_response({"status": "ok"})
 
     async def handle_metrics(req: web.Request) -> web.Response:
-        """Prometheus metrics endpoint — scrape with Prometheus or view in browser."""
+        """Prometheus metrics — localhost only to avoid leaking operational data."""
+        peername = req.transport.get_extra_info("peername") if req.transport else None
+        peer_ip  = peername[0] if peername else ""
+        try:
+            if not ipaddress.ip_address(peer_ip).is_loopback:
+                return web.json_response({"error": "Forbidden"}, status=403)
+        except ValueError:
+            return web.json_response({"error": "Forbidden"}, status=403)
+
         METRICS.vectors_stored.set(store.count())
         METRICS.peers_online.set(router.peer_count())
         return web.Response(

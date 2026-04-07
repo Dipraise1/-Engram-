@@ -1,5 +1,18 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, H3, Lead, P, Code, Note, Table, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "Private Namespaces",
+  description:
+    "Store and search data that only you can read. Engram private namespaces use client-side AES-256-GCM encryption — miners store ciphertext and never see your original text.",
+  alternates: { canonical: "https://theengram.space/docs/namespaces" },
+  openGraph: {
+    title: "Private Namespaces — Engram",
+    description:
+      "Client-side AES-256-GCM encryption for your vector data. Miners store ciphertext, you hold the keys.",
+    url: "https://theengram.space/docs/namespaces",
+  },
+};
 
 export default function NamespacesPage() {
   return (

@@ -1,7 +1,19 @@
-"use client";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Zap, Shield, Globe, Cpu } from "lucide-react";
 import { DocPage, H1, Lead, Code, Note } from "./ui";
+
+export const metadata: Metadata = {
+  title: "Documentation",
+  description:
+    "Engram documentation: learn how to store and query AI embeddings on a decentralized Bittensor subnet. Covers SDK, CLI, miners, validators, and protocol.",
+  alternates: { canonical: "https://theengram.space/docs" },
+  openGraph: {
+    title: "Engram Documentation",
+    description: "Learn how to use Engram — the decentralized vector database on Bittensor.",
+    url: "https://theengram.space/docs",
+  },
+};
 
 const CARDS = [
   {

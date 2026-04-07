@@ -71,6 +71,7 @@ _aiohttp_helpers.TimerContext = _PatchedTimerContext
 from loguru import logger
 
 from engram.config import CHALLENGE_INTERVAL_SECS, RECALL_K, SUBNET_VERSION
+from engram.miner.auth import sign_request
 from engram.validator.challenge import ChallengeDispatcher
 from engram.validator.ground_truth import GroundTruthManager
 from engram.validator.reward import RewardManager
@@ -157,6 +158,7 @@ async def run() -> None:
 
     # ── Bittensor setup ───────────────────────────────────────────────────────
     wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
+    _keypair = wallet.hotkey  # used to sign all outgoing miner requests
     subtensor = bt.Subtensor(network=network)
     metagraph = subtensor.metagraph(netuid=netuid)
 
@@ -200,10 +202,11 @@ async def run() -> None:
                 sample = ground_truth.sample(n=5)
 
                 for entry in sample:
-                    payload = {
+                    _base_payload = {
                         "query_vector": entry.embedding.tolist(),
                         "top_k": RECALL_K,
                     }
+                    payload = sign_request(_keypair, "QuerySynapse", _base_payload)
 
                     for uid, axon in zip(uids, axons):
                         t0 = time.time()
@@ -251,11 +254,12 @@ async def run() -> None:
                     challenge = challenge_dispatcher.build_challenge(cid)
 
                     if challenge and entry is not None:
-                        challenge_payload = {
+                        _base_challenge = {
                             "cid": challenge.cid,
                             "nonce_hex": challenge.nonce_hex,
                             "expires_at": challenge.expires_at,
                         }
+                        challenge_payload = sign_request(_keypair, "ChallengeSynapse", _base_challenge)
 
                         for uid, axon in zip(uids, axons):
                             _axon_ip  = axon.ip if axon.ip not in ("0.0.0.0", "0") else None

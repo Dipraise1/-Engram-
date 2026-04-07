@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, Code, Table, Note, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "CLI Reference",
+  description:
+    "Full reference for the Engram CLI: engram init, ingest, query, status, and wallet-stats commands. Install with pip and manage your local vector store from the terminal.",
+  alternates: { canonical: "https://theengram.space/docs/cli" },
+  openGraph: {
+    title: "Engram CLI Reference",
+    description: "engram init, ingest, query, status, wallet-stats — all commands documented.",
+    url: "https://theengram.space/docs/cli",
+  },
+};
 
 export default function CLIPage() {
   return (

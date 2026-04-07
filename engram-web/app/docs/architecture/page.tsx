@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, P, Code, Note } from "../ui";
+
+export const metadata: Metadata = {
+  title: "Architecture",
+  description:
+    "Engram system architecture: how miners, validators, the DHT, HNSW index, and the Bittensor chain fit together. Data flow diagrams and design decisions explained.",
+  alternates: { canonical: "https://theengram.space/docs/architecture" },
+  openGraph: {
+    title: "Architecture — Engram",
+    description: "How the Engram decentralized vector database is designed and how data flows.",
+    url: "https://theengram.space/docs/architecture",
+  },
+};
 
 export default function ArchitecturePage() {
   return (

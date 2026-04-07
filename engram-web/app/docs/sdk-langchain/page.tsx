@@ -1,5 +1,17 @@
-"use client";
+import type { Metadata } from "next";
 import { DocPage, H1, H2, Lead, P, Code, Note, Ic } from "../ui";
+
+export const metadata: Metadata = {
+  title: "LangChain Integration",
+  description:
+    "Use Engram as a LangChain VectorStore. Drop-in integration for RAG pipelines — store documents, run similarity search, and build LLM apps with decentralized storage.",
+  alternates: { canonical: "https://theengram.space/docs/sdk-langchain" },
+  openGraph: {
+    title: "LangChain Integration — Engram",
+    description: "Use Engram as a LangChain VectorStore for decentralized RAG pipelines.",
+    url: "https://theengram.space/docs/sdk-langchain",
+  },
+};
 
 export default function LangChainPage() {
   return (
