@@ -5,10 +5,12 @@ export default function SDKPage() {
   return (
     <DocPage
       prev={{ href: "/docs/quickstart", label: "Quick Start" }}
-      next={{ href: "/docs/sdk-langchain", label: "LangChain" }}
+      next={{ href: "/docs/namespaces", label: "Private Namespaces" }}
       toc={[
         { id: "install", label: "Install" },
         { id: "client", label: "EngramClient" },
+        { id: "autodiscover", label: "from_subnet()" },
+        { id: "namespaces", label: "Private namespaces" },
         { id: "ingest", label: "ingest()" },
         { id: "query", label: "query()" },
         { id: "batch", label: "batch_ingest_file()" },
@@ -37,8 +39,62 @@ client = EngramClient(
         rows={[
           [<Ic key="mu">miner_url</Ic>, "str", '"http://127.0.0.1:8091"', "Base URL of the miner's HTTP server"],
           [<Ic key="to">timeout</Ic>, "float", "30.0", "Request timeout in seconds"],
+          [<Ic key="ns">namespace</Ic>, "str | None", "None", "Private collection name — enables encryption"],
+          [<Ic key="nk">namespace_key</Ic>, "str | None", "None", "Secret key for the namespace (min 16 chars)"],
         ]}
       />
+
+      <H2 id="autodiscover">from_subnet()</H2>
+      <P>
+        Auto-discovers the best available miner from the Bittensor metagraph. Probes the top miners by
+        incentive score in parallel and returns a client pointed at the fastest responsive one.
+      </P>
+      <Code lang="python">{`# One line — no miner URL needed
+client = EngramClient.from_subnet(netuid=450)
+
+# With a private namespace
+client = EngramClient.from_subnet(
+    netuid=450,
+    network="finney",
+)
+# Then scope to a namespace:
+private_client = EngramClient(
+    client.miner_url,
+    namespace="my-project",
+    namespace_key="my-secret-key",
+)`}</Code>
+
+      <Table
+        headers={["Parameter", "Type", "Default", "Description"]}
+        rows={[
+          [<Ic key="nu">netuid</Ic>, "int", "450", "Subnet UID to query"],
+          [<Ic key="nw">network</Ic>, "str", '"finney"', 'Subtensor network — "finney", "test", or ws:// endpoint'],
+          [<Ic key="to">timeout</Ic>, "float", "30.0", "Timeout for the returned client"],
+          [<Ic key="pt">probe_timeout</Ic>, "float", "3.0", "Timeout for each health probe during discovery"],
+          [<Ic key="tn">top_n</Ic>, "int", "5", "Number of top miners to probe (picks by incentive rank)"],
+        ]}
+      />
+      <Note>
+        Requires <Ic>bittensor</Ic> to be installed. Raises <Ic>RuntimeError</Ic> if no miners are reachable.
+      </Note>
+
+      <H2 id="namespaces">Private namespaces</H2>
+      <P>
+        Pass <Ic>namespace</Ic> and <Ic>namespace_key</Ic> to store data in an encrypted, private collection.
+        Text is encrypted with AES-256-GCM client-side before being sent to any miner.
+      </P>
+      <Code lang="python">{`private = EngramClient(
+    "http://miner:8091",
+    namespace="company-docs",
+    namespace_key="your-secret-key-min-16-chars",
+)
+
+cid = private.ingest("Q4 revenue was $4.2M")  # encrypted before leaving your machine
+results = private.query("revenue figures")      # decrypted client-side`}</Code>
+      <P>
+        See <a href="/docs/namespaces" className="text-[#e040fb] hover:underline">Private Namespaces</a> for
+        the full encryption spec and threat model.
+      </P>
 
       <H2 id="ingest">ingest()</H2>
       <Code lang="python">{`cid: str = client.ingest(text: str, metadata: dict = None)`}</Code>

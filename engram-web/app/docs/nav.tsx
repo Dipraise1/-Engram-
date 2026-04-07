@@ -18,6 +18,7 @@ const NAV = [
     group: "Python SDK",
     items: [
       { href: "/docs/sdk", label: "EngramClient" },
+      { href: "/docs/namespaces", label: "Private Namespaces 🔒" },
       { href: "/docs/sdk-langchain", label: "LangChain" },
       { href: "/docs/sdk-llama", label: "LlamaIndex" },
       { href: "/docs/sdk-errors", label: "Exceptions" },
@@ -47,10 +48,11 @@ const NAV = [
 
 const SEARCH_INDEX = [
   { title: "Quick Start", href: "/docs/quickstart", desc: "Install and run your first ingest + query" },
-  { title: "EngramClient", href: "/docs/sdk", desc: "Python SDK — ingest, query, batch, health" },
+  { title: "EngramClient", href: "/docs/sdk", desc: "Python SDK — ingest, query, batch, auto-discovery" },
+  { title: "Private Namespaces", href: "/docs/namespaces", desc: "Encrypted, access-controlled private collections" },
   { title: "LangChain Integration", href: "/docs/sdk-langchain", desc: "Use Engram as a LangChain VectorStore" },
   { title: "LlamaIndex Integration", href: "/docs/sdk-llama", desc: "Use Engram with LlamaIndex" },
-  { title: "CLI Reference", href: "/docs/cli", desc: "engram ingest, query, status — all commands" },
+  { title: "CLI Reference", href: "/docs/cli", desc: "engram init, ingest, query, status — all commands" },
   { title: "Run a Miner", href: "/docs/miner", desc: "Wallet, registration, config, start" },
   { title: "Run a Validator", href: "/docs/validator", desc: "Scoring loop, weight setting" },
   { title: "Protocol", href: "/docs/protocol", desc: "IngestSynapse, QuerySynapse, CID spec" },

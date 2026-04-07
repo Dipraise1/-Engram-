@@ -53,6 +53,11 @@ class EngramClient:
         self.timeout       = timeout
         self.namespace     = namespace
         self.namespace_key = namespace_key
+        # Encryption engine — created lazily when namespace is first used
+        self._enc = None
+        if namespace and namespace_key:
+            from engram.sdk.encryption import NamespaceEncryption
+            self._enc = NamespaceEncryption(namespace, namespace_key)
 
     @classmethod
     def from_subnet(
@@ -167,10 +172,21 @@ class EngramClient:
             IngestError:        If the miner returns an error.
             InvalidCIDError:    If the returned CID fails format validation.
         """
-        payload: dict[str, Any] = {"text": text, "metadata": metadata or {}}
-        if self.namespace:
-            payload["namespace"]     = self.namespace
-            payload["namespace_key"] = self.namespace_key
+        if self._enc:
+            # Private namespace: encrypt text + metadata client-side, send raw embedding.
+            # The miner never sees the original text — only the float vector + ciphertext.
+            from engram.miner.embedder import get_embedder
+            embedding = get_embedder().embed(text).tolist()
+            enc_blob  = self._enc.encrypt_payload(text, metadata or {})
+            payload: dict[str, Any] = {
+                "raw_embedding": embedding,
+                "metadata": {"_enc": enc_blob},
+                "namespace":     self.namespace,
+                "namespace_key": self.namespace_key,
+            }
+        else:
+            payload = {"text": text, "metadata": metadata or {}}
+
         data = self._post("IngestSynapse", payload)
 
         if data.get("error"):
@@ -236,16 +252,29 @@ class EngramClient:
         Raises:
             MinerOfflineError, QueryError
         """
-        payload: dict[str, Any] = {"query_text": text, "top_k": top_k}
-        if self.namespace:
-            payload["namespace"]     = self.namespace
-            payload["namespace_key"] = self.namespace_key
+        if self._enc:
+            # Private namespace: compute query embedding locally, search by vector.
+            from engram.miner.embedder import get_embedder
+            query_vector = get_embedder().embed(text).tolist()
+            payload: dict[str, Any] = {
+                "query_vector":  query_vector,
+                "top_k":         top_k,
+                "namespace":     self.namespace,
+                "namespace_key": self.namespace_key,
+            }
+        else:
+            payload = {"query_text": text, "top_k": top_k}
+
         data = self._post("QuerySynapse", payload)
 
         if data.get("error"):
             raise QueryError(data["error"])
 
-        return data.get("results") or []
+        results = data.get("results") or []
+        # Decrypt _enc metadata fields if this is a private namespace client
+        if self._enc:
+            results = self._enc.decrypt_results(results)
+        return results
 
     def query_by_vector(
         self,

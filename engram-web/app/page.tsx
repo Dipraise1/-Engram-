@@ -121,10 +121,6 @@ function Navbar() {
           <Link href="/playground" className="hover:text-white/70 transition-colors">Playground</Link>
           <Link href="/dashboard" className="hover:text-white/70 transition-colors">Dashboard</Link>
           <Link href="/docs" className="hover:text-white/70 transition-colors">Docs</Link>
-          <a href="https://github.com/Dipraise1/-Engram-" target="_blank" rel="noopener noreferrer"
-            className="hover:text-white/70 transition-colors flex items-center gap-1">
-            GitHub <ArrowUpRight className="w-3 h-3" />
-          </a>
         </div>
 
         <div className="flex items-center gap-3">
