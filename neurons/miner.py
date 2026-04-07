@@ -33,6 +33,7 @@ from engram.config import SUBNET_VERSION
 from engram.miner.embedder import get_embedder
 from engram.miner.ingest import IngestHandler
 from engram.miner.metrics import METRICS, generate_latest
+from engram.miner.namespace import NamespaceRegistry
 from engram.miner.query import QueryHandler
 from engram.miner.rate_limiter import RateLimiter
 from engram.miner.wallet_tracker import WalletTracker
@@ -87,13 +88,16 @@ async def run() -> None:
     logger.info(f"Wallet: {wallet.hotkey.ss58_address}")
 
     # ── Core components ───────────────────────────────────────────────────────
-    store          = build_store(backend)
-    embedder       = get_embedder()
-    ingest_handler = IngestHandler(store=store, embedder=embedder,
-                                   subtensor=subtensor, netuid=netuid)
-    query_handler  = QueryHandler(store=store, embedder=embedder)
-    rate_limiter    = RateLimiter()
-    wallet_tracker  = WalletTracker()
+    store              = build_store(backend)
+    embedder           = get_embedder()
+    ns_registry        = NamespaceRegistry()
+    ingest_handler     = IngestHandler(store=store, embedder=embedder,
+                                       subtensor=subtensor, netuid=netuid,
+                                       namespace_registry=ns_registry)
+    query_handler      = QueryHandler(store=store, embedder=embedder,
+                                      namespace_registry=ns_registry)
+    rate_limiter       = RateLimiter()
+    wallet_tracker     = WalletTracker()
 
     logger.info(f"Vector store: {backend} | {store.count()} vectors loaded")
 
@@ -163,6 +167,8 @@ async def run() -> None:
                 text          = body.get("text"),
                 raw_embedding = body.get("raw_embedding"),
                 metadata      = body.get("metadata") or {},
+                namespace     = body.get("namespace") or None,
+                namespace_key = body.get("namespace_key") or None,
             )
             result = ingest_handler.handle(synapse, caller_hotkey=caller_hotkey)
             elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -193,9 +199,11 @@ async def run() -> None:
             body    = await req.json()
             caller_hotkey = body.get("hotkey")
             synapse = QuerySynapse(
-                query_text   = body.get("query_text"),
-                query_vector = body.get("query_vector"),
-                top_k        = int(body.get("top_k", 10)),
+                query_text    = body.get("query_text"),
+                query_vector  = body.get("query_vector"),
+                top_k         = int(body.get("top_k", 10)),
+                namespace     = body.get("namespace") or None,
+                namespace_key = body.get("namespace_key") or None,
             )
             result = query_handler.handle(synapse)
             elapsed_ms = (_time.perf_counter() - t0) * 1000
@@ -232,6 +240,55 @@ async def run() -> None:
 
         except Exception as exc:
             logger.error(f"Challenge error: {exc}")
+            return web.json_response({"error": "Internal error — check miner logs."}, status=500)
+
+    async def handle_namespace(req: web.Request) -> web.Response:
+        """Namespace management — create, delete, rotate key. Localhost only."""
+        peername = req.transport.get_extra_info("peername") if req.transport else None
+        peer_ip  = peername[0] if peername else ""
+        try:
+            if not ipaddress.ip_address(peer_ip).is_loopback:
+                return web.json_response({"error": "Forbidden"}, status=403)
+        except ValueError:
+            return web.json_response({"error": "Forbidden"}, status=403)
+
+        try:
+            body      = await req.json()
+            action    = body.get("action", "")
+            namespace = body.get("namespace", "")
+            key       = body.get("key", "")
+            new_key   = body.get("new_key")
+
+            if action == "create":
+                ns_registry.create(namespace, key)
+                return web.json_response({"ok": True, "namespace": namespace})
+
+            elif action == "delete":
+                ok = ns_registry.delete(namespace, key)
+                if not ok:
+                    return web.json_response({"error": "Invalid key or namespace not found."}, status=403)
+                return web.json_response({"ok": True})
+
+            elif action == "rotate":
+                if not new_key:
+                    return web.json_response({"error": "new_key is required."}, status=400)
+                ok = ns_registry.rotate_key(namespace, key, new_key)
+                if not ok:
+                    return web.json_response({"error": "Invalid key or namespace not found."}, status=403)
+                return web.json_response({"ok": True})
+
+            elif action == "list":
+                return web.json_response({"namespaces": ns_registry.list_namespaces()})
+
+            else:
+                return web.json_response(
+                    {"error": "Unknown action. Use: create, delete, rotate, list"},
+                    status=400,
+                )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.error(f"Namespace error: {exc}")
             return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
     async def handle_wallet_stats(req: web.Request) -> web.Response:
@@ -278,6 +335,7 @@ async def run() -> None:
     app.router.add_post("/IngestSynapse",           handle_ingest)
     app.router.add_post("/QuerySynapse",            handle_query)
     app.router.add_post("/ChallengeSynapse",        handle_challenge)
+    app.router.add_post("/namespace",               handle_namespace)
     app.router.add_get("/health",                   handle_health)
     app.router.add_get("/metrics",                  handle_metrics)
     app.router.add_get("/wallet-stats",             handle_wallet_stats)

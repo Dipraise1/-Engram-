@@ -23,6 +23,10 @@ class IngestSynapse(bt.Synapse):
 
     Request:  text OR raw_embedding (one must be provided)
     Response: cid (set by miner on success)
+
+    Private collections:
+      Set `namespace` + `namespace_key` to store data in an isolated, access-controlled
+      collection. Without these fields the data is public (existing behaviour).
     """
 
     # Request fields
@@ -41,6 +45,14 @@ class IngestSynapse(bt.Synapse):
     model_version: str = Field(
         default="v1",
         description="Subnet model epoch version for CID generation.",
+    )
+    namespace: str | None = Field(
+        default=None,
+        description="Private collection name. Data is isolated and requires namespace_key to access.",
+    )
+    namespace_key: str | None = Field(
+        default=None,
+        description="Secret key for the namespace. Never stored — only a hash is kept.",
     )
 
     # Response fields (miner writes these)
@@ -72,6 +84,14 @@ class QuerySynapse(bt.Synapse):
     query_text: str | None = Field(default=None)
     query_vector: list[float] | None = Field(default=None)
     top_k: int = Field(default=10, ge=1, le=100)
+    namespace: str | None = Field(
+        default=None,
+        description="Private collection to search within. Requires matching namespace_key.",
+    )
+    namespace_key: str | None = Field(
+        default=None,
+        description="Secret key for the namespace.",
+    )
 
     # Response fields (miner writes these)
     results: list[dict[str, Any]] = Field(

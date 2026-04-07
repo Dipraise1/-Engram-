@@ -24,11 +24,15 @@ from engram.config import (
 )
 
 
+_PUBLIC_NS = "__public__"   # sentinel stored in payload to mark public records
+
+
 @dataclass
 class VectorRecord:
     cid: str
     embedding: np.ndarray
     metadata: dict[str, Any] = field(default_factory=dict)
+    namespace: str = _PUBLIC_NS
 
 
 @dataclass
@@ -42,8 +46,8 @@ class SearchResult:
 
 class VectorStore:
     def upsert(self, record: VectorRecord) -> None: ...
-    def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K) -> list[SearchResult]: ...
-    def get(self, cid: str) -> VectorRecord | None: ...
+    def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K, namespace: str = _PUBLIC_NS) -> list[SearchResult]: ...
+    def get(self, cid: str, namespace: str = _PUBLIC_NS) -> VectorRecord | None: ...
     def delete(self, cid: str) -> bool: ...
     def count(self) -> int: ...
 
@@ -109,16 +113,24 @@ class QdrantStore(VectorStore):
                 PointStruct(
                     id=str(uuid.uuid5(uuid.NAMESPACE_URL, record.cid)),
                     vector=record.embedding.tolist(),
-                    payload={"cid": record.cid, **record.metadata},
+                    payload={
+                        "cid": record.cid,
+                        "_ns": record.namespace,
+                        **record.metadata,
+                    },
                 )
             ],
         )
 
-    def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K) -> list[SearchResult]:
-        from qdrant_client.models import SearchParams
+    def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K, namespace: str = _PUBLIC_NS) -> list[SearchResult]:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchParams
+        ns_filter = Filter(
+            must=[FieldCondition(key="_ns", match=MatchValue(value=namespace))]
+        )
         results = self._client.query_points(
             collection_name=self._collection,
             query=query.tolist(),
+            query_filter=ns_filter,
             limit=top_k,
             with_payload=True,
             search_params=SearchParams(hnsw_ef=HNSW_EF_SEARCH),
@@ -127,12 +139,12 @@ class QdrantStore(VectorStore):
             SearchResult(
                 cid=hit.payload.get("cid", ""),
                 score=float(hit.score),
-                metadata={k: v for k, v in hit.payload.items() if k != "cid"},
+                metadata={k: v for k, v in hit.payload.items() if k not in ("cid", "_ns")},
             )
             for hit in results.points
         ]
 
-    def get(self, cid: str) -> VectorRecord | None:
+    def get(self, cid: str, namespace: str = _PUBLIC_NS) -> VectorRecord | None:
         point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, cid))
         results = self._client.retrieve(
             collection_name=self._collection,
@@ -143,10 +155,15 @@ class QdrantStore(VectorStore):
         if not results:
             return None
         r = results[0]
+        stored_ns = r.payload.get("_ns", _PUBLIC_NS)
+        # Enforce namespace isolation — don't return records from other namespaces
+        if stored_ns != namespace:
+            return None
         return VectorRecord(
             cid=cid,
             embedding=np.array(r.vector, dtype=np.float32),
-            metadata={k: v for k, v in r.payload.items() if k != "cid"},
+            metadata={k: v for k, v in r.payload.items() if k not in ("cid", "_ns")},
+            namespace=stored_ns,
         )
 
     def delete(self, cid: str) -> bool:
@@ -194,6 +211,7 @@ class FAISSStore(VectorStore):
         self._cid_to_id: dict[str, int] = {}
         self._metadata: dict[str, dict[str, Any]] = {}
         self._vectors: dict[str, np.ndarray] = {}
+        self._namespaces: dict[str, str] = {}   # cid → namespace
         self._next_id: int = 0
 
         if index_path and os.path.exists(index_path):
@@ -209,7 +227,6 @@ class FAISSStore(VectorStore):
         faiss.normalize_L2(vec)
 
         if record.cid in self._cid_to_id:
-            # FAISS HNSW doesn't support in-place update; just overwrite metadata
             internal_id = self._cid_to_id[record.cid]
         else:
             internal_id = self._next_id
@@ -220,8 +237,9 @@ class FAISSStore(VectorStore):
 
         self._metadata[record.cid] = record.metadata
         self._vectors[record.cid] = record.embedding
+        self._namespaces[record.cid] = record.namespace
 
-    def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K) -> list[SearchResult]:
+    def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K, namespace: str = _PUBLIC_NS) -> list[SearchResult]:
         import faiss
 
         if self._index.ntotal == 0:
@@ -230,8 +248,9 @@ class FAISSStore(VectorStore):
         vec = query.reshape(1, -1).astype(np.float32)
         faiss.normalize_L2(vec)
 
-        k = min(top_k, self._index.ntotal)
-        distances, indices = self._index.search(vec, k)
+        # Over-fetch to account for namespace filtering reducing the result set
+        fetch_k = min(top_k * 10, self._index.ntotal)
+        distances, indices = self._index.search(vec, fetch_k)
 
         results = []
         for dist, idx in zip(distances[0], indices[0]):
@@ -240,20 +259,29 @@ class FAISSStore(VectorStore):
             cid = self._id_to_cid.get(int(idx))
             if cid is None:
                 continue
+            # Enforce namespace isolation
+            if self._namespaces.get(cid, _PUBLIC_NS) != namespace:
+                continue
             results.append(SearchResult(
                 cid=cid,
                 score=float(dist),
                 metadata=self._metadata.get(cid, {}),
             ))
+            if len(results) >= top_k:
+                break
         return results
 
-    def get(self, cid: str) -> VectorRecord | None:
+    def get(self, cid: str, namespace: str = _PUBLIC_NS) -> VectorRecord | None:
         if cid not in self._vectors:
+            return None
+        # Enforce namespace isolation
+        if self._namespaces.get(cid, _PUBLIC_NS) != namespace:
             return None
         return VectorRecord(
             cid=cid,
             embedding=self._vectors[cid],
             metadata=self._metadata.get(cid, {}),
+            namespace=self._namespaces.get(cid, _PUBLIC_NS),
         )
 
     def delete(self, cid: str) -> bool:
@@ -281,6 +309,7 @@ class FAISSStore(VectorStore):
                 "cid_to_id": self._cid_to_id,
                 "metadata": self._metadata,
                 "vectors": {cid: emb.tolist() for cid, emb in self._vectors.items()},
+                "namespaces": self._namespaces,
                 "next_id": self._next_id,
             }
             with open(meta_path, "w", encoding="utf-8") as f:
@@ -296,14 +325,15 @@ class FAISSStore(VectorStore):
         if os.path.exists(json_meta_path):
             with open(json_meta_path, encoding="utf-8") as f:
                 data = json.load(f)
-            self._id_to_cid = {int(k): v for k, v in data.get("id_to_cid", {}).items()}
-            self._cid_to_id = data.get("cid_to_id", {})
-            self._metadata  = data.get("metadata", {})
-            self._vectors   = {
+            self._id_to_cid  = {int(k): v for k, v in data.get("id_to_cid", {}).items()}
+            self._cid_to_id  = data.get("cid_to_id", {})
+            self._metadata   = data.get("metadata", {})
+            self._vectors    = {
                 cid: np.array(v, dtype=np.float32)
                 for cid, v in data.get("vectors", {}).items()
             }
-            self._next_id   = data.get("next_id", self._index.ntotal)
+            self._namespaces = data.get("namespaces", {})
+            self._next_id    = data.get("next_id", self._index.ntotal)
         elif os.path.exists(legacy_meta_path):
             # One-time migration: load old pickle file, immediately re-save as JSON
             import pickle  # noqa: S403 — intentional legacy migration only

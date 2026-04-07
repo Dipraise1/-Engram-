@@ -19,16 +19,19 @@ from engram.protocol import QuerySynapse
 
 
 class QueryHandler:
-    def __init__(self, store: VectorStore, embedder: Embedder) -> None:
+    def __init__(self, store: VectorStore, embedder: Embedder, namespace_registry=None) -> None:
         self._store = store
         self._embedder = embedder
+        self._ns_registry = namespace_registry
 
     def handle(self, synapse: QuerySynapse) -> QuerySynapse:
+        from engram.miner.store import _PUBLIC_NS
         start = time.perf_counter()
 
         try:
+            namespace = self._resolve_namespace(synapse)
             query_vec = self._resolve_query(synapse)
-            results = self._store.search(query_vec, top_k=synapse.top_k or DEFAULT_TOP_K)
+            results   = self._store.search(query_vec, top_k=synapse.top_k or DEFAULT_TOP_K, namespace=namespace)
 
             elapsed_ms = (time.perf_counter() - start) * 1000
 
@@ -38,7 +41,7 @@ class QueryHandler:
             ]
             synapse.latency_ms = elapsed_ms
 
-            logger.info(f"Query OK | hits={len(results)} | {elapsed_ms:.1f}ms")
+            logger.info(f"Query OK | ns={namespace} | hits={len(results)} | {elapsed_ms:.1f}ms")
 
         except ValueError as e:
             logger.warning(f"Query rejected: {e}")
@@ -50,6 +53,33 @@ class QueryHandler:
             synapse.results = []
 
         return synapse
+
+    def _resolve_namespace(self, synapse: QuerySynapse) -> str:
+        from engram.miner.store import _PUBLIC_NS
+        ns  = synapse.namespace
+        key = synapse.namespace_key
+
+        if ns is None:
+            return _PUBLIC_NS
+
+        if self._ns_registry is None:
+            raise ValueError("This miner does not support private namespaces.")
+
+        if key is None:
+            raise ValueError(
+                f"Namespace '{ns}' requires a key. Pass namespace_key in your request."
+            )
+
+        if not self._ns_registry.exists(ns):
+            raise ValueError(
+                f"Namespace '{ns}' does not exist. Create it by ingesting data with the same namespace + key."
+            )
+
+        if not self._ns_registry.verify(ns, key):
+            raise ValueError(
+                f"Invalid key for namespace '{ns}'."
+            )
+        return ns
 
     def _resolve_query(self, synapse: QuerySynapse) -> np.ndarray:
         if synapse.query_vector is not None:

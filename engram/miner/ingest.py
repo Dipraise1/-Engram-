@@ -44,11 +44,13 @@ class IngestHandler:
         embedder: Embedder,
         subtensor=None,
         netuid: int | None = None,
+        namespace_registry=None,
     ) -> None:
         self._store = store
         self._embedder = embedder
         self._subtensor = subtensor   # optional — if set, stake check is enforced
         self._netuid = netuid
+        self._ns_registry = namespace_registry
 
     def handle(self, synapse: IngestSynapse, caller_hotkey: str | None = None) -> IngestSynapse:
         start = time.perf_counter()
@@ -56,6 +58,7 @@ class IngestHandler:
         try:
             self._check_stake(caller_hotkey)
             self._validate(synapse)
+            namespace = self._resolve_namespace(synapse)
             embedding = self._resolve_embedding(synapse)
             cid = _generate_cid(embedding, synapse.metadata, synapse.model_version)
 
@@ -63,6 +66,7 @@ class IngestHandler:
                 cid=cid,
                 embedding=embedding,
                 metadata=synapse.metadata,
+                namespace=namespace,
             ))
 
             elapsed_ms = (time.perf_counter() - start) * 1000
@@ -129,6 +133,35 @@ class IngestHandler:
                     f"Metadata is {size:,} bytes, which is over the {MAX_METADATA_BYTES:,}-byte limit. "
                     "Try removing large values or moving the content into the text field instead."
                 )
+
+    def _resolve_namespace(self, synapse: IngestSynapse) -> str:
+        """Validate namespace key and return the namespace to store under."""
+        from engram.miner.store import _PUBLIC_NS
+        ns  = synapse.namespace
+        key = synapse.namespace_key
+
+        if ns is None:
+            return _PUBLIC_NS   # public data — no auth needed
+
+        if self._ns_registry is None:
+            raise ValueError("This miner does not support private namespaces.")
+
+        if key is None:
+            raise ValueError(
+                f"Namespace '{ns}' requires a key. Pass namespace_key in your request."
+            )
+
+        # Auto-create namespace on first use with this key
+        if not self._ns_registry.exists(ns):
+            self._ns_registry.create(ns, key)
+            logger.info(f"Auto-created namespace '{ns}'")
+            return ns
+
+        if not self._ns_registry.verify(ns, key):
+            raise ValueError(
+                f"Invalid key for namespace '{ns}'. Check your namespace_key."
+            )
+        return ns
 
     def _resolve_embedding(self, synapse: IngestSynapse) -> np.ndarray:
         if synapse.raw_embedding is not None:

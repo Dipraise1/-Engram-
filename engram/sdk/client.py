@@ -42,9 +42,17 @@ class EngramClient:
         timeout:   Request timeout in seconds (default 30).
     """
 
-    def __init__(self, miner_url: str = "http://127.0.0.1:8091", timeout: float = 30.0) -> None:
-        self.miner_url = miner_url.rstrip("/")
-        self.timeout = timeout
+    def __init__(
+        self,
+        miner_url: str = "http://127.0.0.1:8091",
+        timeout: float = 30.0,
+        namespace: str | None = None,
+        namespace_key: str | None = None,
+    ) -> None:
+        self.miner_url     = miner_url.rstrip("/")
+        self.timeout       = timeout
+        self.namespace     = namespace
+        self.namespace_key = namespace_key
 
     @classmethod
     def from_subnet(
@@ -159,7 +167,10 @@ class EngramClient:
             IngestError:        If the miner returns an error.
             InvalidCIDError:    If the returned CID fails format validation.
         """
-        payload = {"text": text, "metadata": metadata or {}}
+        payload: dict[str, Any] = {"text": text, "metadata": metadata or {}}
+        if self.namespace:
+            payload["namespace"]     = self.namespace
+            payload["namespace_key"] = self.namespace_key
         data = self._post("IngestSynapse", payload)
 
         if data.get("error"):
@@ -190,7 +201,10 @@ class EngramClient:
         Raises:
             MinerOfflineError, IngestError, InvalidCIDError
         """
-        payload = {"raw_embedding": embedding, "metadata": metadata or {}}
+        payload: dict[str, Any] = {"raw_embedding": embedding, "metadata": metadata or {}}
+        if self.namespace:
+            payload["namespace"]     = self.namespace
+            payload["namespace_key"] = self.namespace_key
         data = self._post("IngestSynapse", payload)
 
         if data.get("error"):
@@ -222,7 +236,10 @@ class EngramClient:
         Raises:
             MinerOfflineError, QueryError
         """
-        payload = {"query_text": text, "top_k": top_k}
+        payload: dict[str, Any] = {"query_text": text, "top_k": top_k}
+        if self.namespace:
+            payload["namespace"]     = self.namespace
+            payload["namespace_key"] = self.namespace_key
         data = self._post("QuerySynapse", payload)
 
         if data.get("error"):
