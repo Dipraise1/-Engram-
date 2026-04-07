@@ -139,7 +139,7 @@ results = eng_client.query("deal notes")  # returns nothing — scoped to 'eng'`
       <Code lang="bash">{`curl -X POST http://localhost:8091/namespace \\
   -H "Content-Type: application/json" \\
   -d '{"action": "delete", "namespace": "acme-docs", "key": "your-secret-key"}'`}</Code>
-      <Note type="warning">
+      <Note>
         Deleting a namespace removes access control but does not wipe the encrypted vectors from the
         miner's store. The data remains as unreadable ciphertext until the miner's collection is pruned.
       </Note>
