@@ -38,8 +38,12 @@ class EngramClient:
     Client for a single Engram miner node.
 
     Args:
-        miner_url: Base URL of the miner's HTTP server, e.g. "http://127.0.0.1:8091".
-        timeout:   Request timeout in seconds (default 30).
+        miner_url:      Base URL of the miner's HTTP server, e.g. "http://127.0.0.1:8091".
+        timeout:        Request timeout in seconds (default 30).
+        namespace:      Private namespace name for encrypted storage.
+        namespace_key:  Secret key for the namespace (AES-256-GCM encryption).
+        keypair:        Optional Bittensor keypair (bt.Keypair) to sign requests.
+                        Required when the miner runs with REQUIRE_HOTKEY_SIG=true.
     """
 
     def __init__(
@@ -48,11 +52,13 @@ class EngramClient:
         timeout: float = 30.0,
         namespace: str | None = None,
         namespace_key: str | None = None,
+        keypair=None,  # bt.Keypair — optional signing keypair
     ) -> None:
         self.miner_url     = miner_url.rstrip("/")
         self.timeout       = timeout
         self.namespace     = namespace
         self.namespace_key = namespace_key
+        self._keypair      = keypair
         # Encryption engine — created lazily when namespace is first used
         self._enc = None
         if namespace and namespace_key:
@@ -386,6 +392,10 @@ class EngramClient:
 
     def _post(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.miner_url}/{endpoint}"
+        # Sign if a keypair was supplied — required when miner has REQUIRE_HOTKEY_SIG=true
+        if self._keypair is not None:
+            from engram.miner.auth import sign_request
+            payload = sign_request(self._keypair, endpoint, payload)
         try:
             body = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(

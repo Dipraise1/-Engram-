@@ -87,14 +87,28 @@ WEIGHT_INTERVAL = 600 # seconds between weight-setting
 
 
 def _http_post_sync(url: str, payload: dict, timeout: float) -> dict | None:
-    """Synchronous HTTP POST — runs in a thread to avoid nest_asyncio/aiohttp conflicts."""
+    """Synchronous HTTP POST — runs in a thread to avoid nest_asyncio/aiohttp conflicts.
+
+    Supports both http:// and https://. TLS certificate verification is enabled
+    by default; set VALIDATOR_TLS_VERIFY=false only for self-signed certs in dev.
+    """
+    import ssl as _ssl
     import urllib.request as _urllib
     import json as _json
+    import os as _os
+
+    tls_verify = _os.getenv("VALIDATOR_TLS_VERIFY", "true").lower() != "false"
+    ctx = None
+    if url.startswith("https://") and not tls_verify:
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+
     try:
         data = _json.dumps(payload).encode()
         req = _urllib.Request(url, data=data,
                               headers={"Content-Type": "application/json"}, method="POST")
-        with _urllib.urlopen(req, timeout=timeout) as resp:
+        with _urllib.urlopen(req, timeout=timeout, context=ctx) as resp:
             if resp.status == 200:
                 return _json.loads(resp.read())
     except Exception as e:
@@ -118,6 +132,9 @@ def _is_routable_ip(ip: str) -> bool:
         return False
 
 
+_MINER_SCHEME = "https" if os.getenv("MINER_USE_HTTPS", "false").lower() == "true" else "http"
+
+
 async def query_axon_direct(
     ip: str,
     port: int,
@@ -126,7 +143,10 @@ async def query_axon_direct(
     timeout: float = 30.0,
     allow_private: bool = False,
 ) -> dict | None:
-    """Direct HTTP call to a miner axon — runs synchronous urllib in a thread pool.
+    """Direct HTTP/HTTPS call to a miner axon — runs synchronous urllib in a thread pool.
+
+    Set MINER_USE_HTTPS=true in .env.validator once miners have TLS up.
+    Set VALIDATOR_TLS_VERIFY=false only for self-signed certs during local dev.
 
     allow_private should only be True for explicitly configured local-dev fallbacks,
     never for IPs sourced from the metagraph.
@@ -137,7 +157,7 @@ async def query_axon_direct(
     if not (1 <= port <= 65535):
         logger.warning(f"Blocked query to invalid port {port}")
         return None
-    url = f"http://{ip}:{port}/{synapse_name}"
+    url = f"{_MINER_SCHEME}://{ip}:{port}/{synapse_name}"
     return await asyncio.get_event_loop().run_in_executor(
         None, _http_post_sync, url, payload, timeout
     )
