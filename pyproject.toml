@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "engram-subnet"
-version = "0.1.1"
+version = "0.1.2"
 description = "Decentralized IPFS-style vector database on Bittensor — the permanent semantic memory layer for AI."
 readme = "README.md"
 license = { text = "MIT" }

@@ -9,6 +9,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   miner:
     build:
@@ -16,24 +21,40 @@ services:
       dockerfile: docker/miner.Dockerfile
     ports:
       - "8091:8091"
-    env_file: .env
+    env_file: .env.miner
     environment:
       - QDRANT_HOST=qdrant
       - VECTOR_STORE_BACKEND=qdrant
+    volumes:
+      - miner_data:/app/data
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   validator:
     build:
       context: .
       dockerfile: docker/validator.Dockerfile
-    ports:
-      - "8092:8092"
-    env_file: .env
+    # Validator has no public HTTP port — it connects outbound to miners only.
+    # Uncomment the line below only if you add a local admin API.
+    # ports:
+    #   - "127.0.0.1:8092:8092"
+    env_file: .env.validator
+    volumes:
+      - validator_data:/app/data
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   qdrant_data:
+  miner_data:
+  validator_data:

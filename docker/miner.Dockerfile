@@ -26,8 +26,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source
 COPY engram/ ./engram/
 COPY neurons/ ./neurons/
-COPY .env.example ./.env
+COPY data/ ./data/
+
+# Create data dir for FAISS index persistence
+RUN mkdir -p /app/data
 
 EXPOSE 8091
 
+# Env comes from docker-compose env_file (.env.miner) — never baked in.
 CMD ["python", "neurons/miner.py"]

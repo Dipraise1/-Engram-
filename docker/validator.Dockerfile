@@ -21,8 +21,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY engram/ ./engram/
 COPY neurons/ ./neurons/
-COPY .env.example ./.env
+COPY data/ ./data/
 
-EXPOSE 8092
+# Create data dir for ground truth persistence
+RUN mkdir -p /app/data
 
+# Validator connects outbound to miners only — no public port needed.
+# Env comes from docker-compose env_file (.env.validator) — never baked in.
 CMD ["python", "neurons/validator.py"]
