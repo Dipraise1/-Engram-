@@ -15,6 +15,7 @@ load_dotenv(os.getenv("ENV_FILE", ".env.validator"), override=True)
 load_dotenv(override=False)  # fallback to .env for any missing keys
 
 import asyncio
+import ipaddress
 import time
 
 import bittensor as bt
@@ -100,8 +101,41 @@ def _http_post_sync(url: str, payload: dict, timeout: float) -> dict | None:
     return None
 
 
-async def query_axon_direct(ip: str, port: int, synapse_name: str, payload: dict, timeout: float = 30.0) -> dict | None:
-    """Direct HTTP call to a miner axon — runs synchronous urllib in a thread pool."""
+def _is_routable_ip(ip: str) -> bool:
+    """Return True only for globally-routable IPs — blocks SSRF via private/loopback addresses."""
+    try:
+        addr = ipaddress.ip_address(ip)
+        return not (
+            addr.is_loopback
+            or addr.is_private
+            or addr.is_link_local
+            or addr.is_multicast
+            or addr.is_reserved
+            or addr.is_unspecified
+        )
+    except ValueError:
+        return False
+
+
+async def query_axon_direct(
+    ip: str,
+    port: int,
+    synapse_name: str,
+    payload: dict,
+    timeout: float = 30.0,
+    allow_private: bool = False,
+) -> dict | None:
+    """Direct HTTP call to a miner axon — runs synchronous urllib in a thread pool.
+
+    allow_private should only be True for explicitly configured local-dev fallbacks,
+    never for IPs sourced from the metagraph.
+    """
+    if not allow_private and not _is_routable_ip(ip):
+        logger.warning(f"Blocked SSRF attempt — refusing to query non-routable IP: {ip}")
+        return None
+    if not (1 <= port <= 65535):
+        logger.warning(f"Blocked query to invalid port {port}")
+        return None
     url = f"http://{ip}:{port}/{synapse_name}"
     return await asyncio.get_event_loop().run_in_executor(
         None, _http_post_sync, url, payload, timeout
@@ -173,19 +207,25 @@ async def run() -> None:
 
                     for uid, axon in zip(uids, axons):
                         t0 = time.time()
+                        # Use metagraph IP if valid and routable; fall back to local dev IP.
+                        # allow_private=True only for the explicitly configured fallback, never
+                        # for IPs sourced from the metagraph (prevents SSRF via chain data).
+                        _axon_ip   = axon.ip if axon.ip not in ("0.0.0.0", "0") else None
+                        _use_ip    = _axon_ip if _axon_ip and _is_routable_ip(_axon_ip) else fallback_miner_ip
+                        _use_port  = axon.port or fallback_miner_port
+                        _is_local  = _use_ip == fallback_miner_ip
                         data = await query_axon_direct(
-                            ip=axon.ip if axon.ip not in ("0.0.0.0", "0") else fallback_miner_ip,
-                                port=axon.port or fallback_miner_port,
+                            ip=_use_ip,
+                            port=_use_port,
                             synapse_name="QuerySynapse",
                             payload=payload,
                             timeout=30.0,
+                            allow_private=_is_local,
                         )
                         latency_ms = (time.time() - t0) * 1000
 
                         if data is None or data.get("error"):
-                            _ip = axon.ip if axon.ip not in ("0.0.0.0", "0") else fallback_miner_ip
-                            _port = axon.port or fallback_miner_port
-                            logger.warning(f"Query failed uid={uid} url=http://{_ip}:{_port}/QuerySynapse data={data}")
+                            logger.warning(f"Query failed uid={uid} url=http://{_use_ip}:{_use_port}/QuerySynapse data={data}")
                             recall_scores[uid] = 0.0
                             latency_scores[uid] = None
                             continue
@@ -218,12 +258,17 @@ async def run() -> None:
                         }
 
                         for uid, axon in zip(uids, axons):
+                            _axon_ip  = axon.ip if axon.ip not in ("0.0.0.0", "0") else None
+                            _use_ip   = _axon_ip if _axon_ip and _is_routable_ip(_axon_ip) else fallback_miner_ip
+                            _use_port = axon.port or fallback_miner_port
+                            _is_local = _use_ip == fallback_miner_ip
                             data = await query_axon_direct(
-                                ip=axon.ip if axon.ip not in ("0.0.0.0", "0") else fallback_miner_ip,
-                                port=axon.port or fallback_miner_port,
+                                ip=_use_ip,
+                                port=_use_port,
                                 synapse_name="ChallengeSynapse",
                                 payload=challenge_payload,
                                 timeout=15.0,
+                                allow_private=_is_local,
                             )
 
                             if data is None or data.get("error"):

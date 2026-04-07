@@ -102,6 +102,7 @@ class IngestHandler:
             )
 
     def _validate(self, synapse: IngestSynapse) -> None:
+        from engram.config import EMBEDDING_DIM
         if synapse.text is None and synapse.raw_embedding is None:
             raise ValueError(
                 "Nothing to store — send either 'text' or 'raw_embedding' in the request."
@@ -112,6 +113,14 @@ class IngestHandler:
                 f"Please keep it under {MAX_TEXT_CHARS:,} characters. "
                 "Split large documents into smaller chunks before ingesting."
             )
+        if synapse.raw_embedding is not None:
+            if not isinstance(synapse.raw_embedding, (list, tuple)):
+                raise ValueError("raw_embedding must be a list of floats.")
+            if len(synapse.raw_embedding) != EMBEDDING_DIM:
+                raise ValueError(
+                    f"raw_embedding has {len(synapse.raw_embedding)} dimensions but "
+                    f"this subnet requires exactly {EMBEDDING_DIM}."
+                )
         if synapse.metadata:
             import json
             size = len(json.dumps(synapse.metadata).encode())

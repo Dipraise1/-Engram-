@@ -270,34 +270,55 @@ class FAISSStore(VectorStore):
 
     def save(self, path: str | None = None) -> None:
         import faiss
-        import pickle
+        import json
         target = path or self._index_path
         if target:
             faiss.write_index(self._index, target)
-            # Persist ID maps and metadata alongside the index
-            meta_path = target + ".meta"
-            with open(meta_path, "wb") as f:
-                pickle.dump({
-                    "id_to_cid": self._id_to_cid,
-                    "cid_to_id": self._cid_to_id,
-                    "metadata": self._metadata,
-                    "vectors": self._vectors,
-                    "next_id": self._next_id,
-                }, f)
+            # Persist ID maps, metadata, and vectors as JSON (no pickle — avoids RCE on load)
+            meta_path = target + ".meta.json"
+            payload = {
+                "id_to_cid": {str(k): v for k, v in self._id_to_cid.items()},
+                "cid_to_id": self._cid_to_id,
+                "metadata": self._metadata,
+                "vectors": {cid: emb.tolist() for cid, emb in self._vectors.items()},
+                "next_id": self._next_id,
+            }
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
 
     def load(self, path: str) -> None:
         import faiss
-        import pickle
+        import json
         self._index = faiss.read_index(path)
-        meta_path = path + ".meta"
-        if os.path.exists(meta_path):
-            with open(meta_path, "rb") as f:
-                data = pickle.load(f)
+        # Prefer the new JSON meta file; fall back to legacy pickle only if it exists
+        json_meta_path = path + ".meta.json"
+        legacy_meta_path = path + ".meta"
+        if os.path.exists(json_meta_path):
+            with open(json_meta_path, encoding="utf-8") as f:
+                data = json.load(f)
+            self._id_to_cid = {int(k): v for k, v in data.get("id_to_cid", {}).items()}
+            self._cid_to_id = data.get("cid_to_id", {})
+            self._metadata  = data.get("metadata", {})
+            self._vectors   = {
+                cid: np.array(v, dtype=np.float32)
+                for cid, v in data.get("vectors", {}).items()
+            }
+            self._next_id   = data.get("next_id", self._index.ntotal)
+        elif os.path.exists(legacy_meta_path):
+            # One-time migration: load old pickle file, immediately re-save as JSON
+            import pickle  # noqa: S403 — intentional legacy migration only
+            logger.warning(
+                f"Migrating legacy pickle meta at {legacy_meta_path} → JSON. "
+                "Delete the .meta file after confirming the migration succeeded."
+            )
+            with open(legacy_meta_path, "rb") as f:
+                data = pickle.load(f)  # noqa: S301
             self._id_to_cid = data.get("id_to_cid", {})
             self._cid_to_id = data.get("cid_to_id", {})
             self._metadata  = data.get("metadata", {})
             self._vectors   = data.get("vectors", {})
             self._next_id   = data.get("next_id", self._index.ntotal)
+            self.save(path)  # immediately write the JSON version
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────

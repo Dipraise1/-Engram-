@@ -21,6 +21,7 @@ load_dotenv(override=False)  # fallback to .env for any missing keys
 import asyncio
 import hashlib
 import hmac as _hmac
+import ipaddress
 import struct
 import time
 
@@ -135,6 +136,13 @@ async def run() -> None:
 
     # ── HTTP handlers ─────────────────────────────────────────────────────────
 
+    def _rate_limit_key(req: web.Request, hotkey: str | None) -> str:
+        """Use the verified hotkey if present, otherwise fall back to peer IP."""
+        if hotkey:
+            return hotkey
+        peername = req.transport.get_extra_info("peername") if req.transport else None
+        return peername[0] if peername else "unknown"
+
     async def handle_ingest(req: web.Request) -> web.Response:
         import time as _time
         t0 = _time.perf_counter()
@@ -142,12 +150,14 @@ async def run() -> None:
             body          = await req.json()
             caller_hotkey = body.get("hotkey")
 
-            if caller_hotkey:
-                try:
-                    rate_limiter.check(caller_hotkey)
-                except ValueError as exc:
-                    METRICS.ingest_total.labels(status="rate_limited").inc()
-                    return web.json_response({"error": str(exc), "hint": "Wait a moment before sending more requests."}, status=429)
+            # Rate-limit every request — keyed by hotkey if provided, else by peer IP.
+            # This prevents bypass by simply omitting the hotkey field.
+            rl_key = _rate_limit_key(req, caller_hotkey)
+            try:
+                rate_limiter.check(rl_key)
+            except ValueError as exc:
+                METRICS.ingest_total.labels(status="rate_limited").inc()
+                return web.json_response({"error": str(exc), "hint": "Wait a moment before sending more requests."}, status=429)
 
             synapse  = IngestSynapse(
                 text          = body.get("text"),
@@ -174,7 +184,7 @@ async def run() -> None:
         except Exception as exc:
             METRICS.ingest_total.labels(status="error").inc()
             logger.error(f"Ingest error: {exc}")
-            return web.json_response({"error": str(exc)}, status=500)
+            return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
     async def handle_query(req: web.Request) -> web.Response:
         import time as _time
@@ -201,7 +211,7 @@ async def run() -> None:
         except Exception as exc:
             METRICS.query_total.labels(status="error").inc()
             logger.error(f"Query error: {exc}")
-            return web.json_response({"error": str(exc)}, status=500)
+            return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
     async def handle_challenge(req: web.Request) -> web.Response:
         try:
@@ -222,9 +232,19 @@ async def run() -> None:
 
         except Exception as exc:
             logger.error(f"Challenge error: {exc}")
-            return web.json_response({"error": str(exc)}, status=500)
+            return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
     async def handle_wallet_stats(req: web.Request) -> web.Response:
+        # Restrict to loopback — this endpoint exposes all wallet activity data.
+        peername = req.transport.get_extra_info("peername") if req.transport else None
+        peer_ip  = peername[0] if peername else ""
+        try:
+            addr = ipaddress.ip_address(peer_ip)
+            if not addr.is_loopback:
+                return web.json_response({"error": "Forbidden"}, status=403)
+        except ValueError:
+            return web.json_response({"error": "Forbidden"}, status=403)
+
         hotkey = req.match_info.get("hotkey", "")
         if hotkey:
             return web.json_response(wallet_tracker.get_stats(hotkey))
@@ -251,7 +271,10 @@ async def run() -> None:
         )
 
     # ── aiohttp server ────────────────────────────────────────────────────────
-    app = web.Application()
+    # 10 MB limit: enough for a 1536-d float32 embedding (~6 KB) with generous headroom.
+    # Prevents OOM from oversized request bodies.
+    _MAX_BODY = int(os.getenv("MINER_MAX_BODY_BYTES", str(10 * 1024 * 1024)))
+    app = web.Application(client_max_size=_MAX_BODY)
     app.router.add_post("/IngestSynapse",           handle_ingest)
     app.router.add_post("/QuerySynapse",            handle_query)
     app.router.add_post("/ChallengeSynapse",        handle_challenge)

@@ -118,6 +118,7 @@ function Navbar() {
           <a href="#roadmap" className="hover:text-white/70 transition-colors">Roadmap</a>
           <a href="#sdk" className="hover:text-white/70 transition-colors">SDK</a>
           <a href="#mine" className="hover:text-white/70 transition-colors">Mine</a>
+          <Link href="/playground" className="hover:text-white/70 transition-colors">Playground</Link>
           <Link href="/dashboard" className="hover:text-white/70 transition-colors">Dashboard</Link>
           <Link href="/docs" className="hover:text-white/70 transition-colors">Docs</Link>
           <a href="https://github.com/Dipraise1/-Engram-" target="_blank" rel="noopener noreferrer"
@@ -231,6 +232,10 @@ function Hero() {
               </div>
 
               <div className="flex items-center gap-3">
+                <Link href="/playground"
+                  className="group flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-[13px] px-6 py-3 rounded-full transition-all font-sans">
+                  Try it live <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                </Link>
                 <Link href="/dashboard"
                   className="group flex items-center gap-2 bg-white text-[#080608] font-bold text-[13px] px-6 py-3 rounded-full hover:bg-white/90 transition-all font-sans">
                   Open Dashboard <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
@@ -1064,6 +1069,7 @@ function Footer() {
             </div>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-[12px] text-white/25">
+            <Link href="/playground" className="hover:text-white/60 transition-colors font-mono">playground</Link>
             <Link href="/dashboard" className="hover:text-white/60 transition-colors font-mono">dashboard</Link>
             <a href="#protocol" className="hover:text-white/60 transition-colors font-mono">protocol</a>
             <a href="#roadmap" className="hover:text-white/60 transition-colors font-mono">roadmap</a>

@@ -46,6 +46,97 @@ class EngramClient:
         self.miner_url = miner_url.rstrip("/")
         self.timeout = timeout
 
+    @classmethod
+    def from_subnet(
+        cls,
+        netuid: int = 450,
+        network: str = "finney",
+        timeout: float = 30.0,
+        probe_timeout: float = 3.0,
+        top_n: int = 5,
+    ) -> "EngramClient":
+        """
+        Auto-discover the best available miner from the Bittensor metagraph.
+
+        Queries the metagraph for registered axons, health-checks the top_n
+        candidates in parallel, and returns a client pointed at the fastest
+        responsive miner.
+
+        Args:
+            netuid:        Subnet UID to query (default 450).
+            network:       Subtensor network — "finney", "test", or ws:// endpoint.
+            timeout:       Request timeout for the returned client.
+            probe_timeout: Timeout for each health probe during discovery.
+            top_n:         Number of axons to probe (picks by incentive rank).
+
+        Returns:
+            An EngramClient pointed at the best available miner.
+
+        Raises:
+            RuntimeError: If bittensor is not installed or no miners are reachable.
+
+        Example::
+
+            client = EngramClient.from_subnet()
+            cid = client.ingest("Hello from auto-discovered miner!")
+        """
+        try:
+            import bittensor as bt
+        except ImportError:
+            raise RuntimeError(
+                "Auto-discovery requires bittensor. Install it with:\n"
+                "  pip install bittensor"
+            )
+
+        subtensor = bt.Subtensor(network=network)
+        metagraph = subtensor.metagraph(netuid=netuid)
+
+        # Rank axons by incentive (highest first), skip empty IPs
+        candidates: list[tuple[float, str]] = []
+        incentives = metagraph.I.tolist() if hasattr(metagraph, "I") else []
+        for uid, axon in enumerate(metagraph.axons):
+            ip = axon.ip
+            port = axon.port
+            if not ip or ip in ("0.0.0.0", "0") or not port:
+                continue
+            incentive = incentives[uid] if uid < len(incentives) else 0.0
+            candidates.append((incentive, f"http://{ip}:{port}"))
+
+        candidates.sort(reverse=True)
+        urls_to_probe = [url for _, url in candidates[:top_n]]
+
+        if not urls_to_probe:
+            raise RuntimeError(
+                f"No registered axons found on subnet {netuid} ({network}). "
+                "Make sure miners are running and registered."
+            )
+
+        # Probe candidates concurrently, return the first that responds
+        import concurrent.futures
+        def _probe(url: str) -> tuple[str, bool]:
+            try:
+                c = cls(url, timeout=probe_timeout)
+                c.health()
+                return url, True
+            except Exception:
+                return url, False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(urls_to_probe)) as pool:
+            futures = {pool.submit(_probe, url): url for url in urls_to_probe}
+            winner: str | None = None
+            for fut in concurrent.futures.as_completed(futures):
+                url, ok = fut.result()
+                if ok and winner is None:
+                    winner = url
+
+        if winner is None:
+            raise RuntimeError(
+                f"Probed {len(urls_to_probe)} miners on subnet {netuid} but none responded. "
+                "The network may be starting up — try again in a moment."
+            )
+
+        return cls(winner, timeout=timeout)
+
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def ingest(

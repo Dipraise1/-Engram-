@@ -7,6 +7,7 @@ Uses the Rust engram_core module for challenge generation and verification.
 
 from __future__ import annotations
 
+import hmac
 import random
 import time
 from dataclasses import dataclass, field
@@ -57,6 +58,8 @@ class ChallengeDispatcher:
     def __init__(self) -> None:
         self._records: dict[str, MinerProofRecord] = {}
         self._known_cids: list[str] = []   # CIDs the validator has ground truth for
+        # Tracks used nonces (hex → expiry timestamp) to prevent replay within TTL window
+        self._used_nonces: dict[str, float] = {}
 
     def register_cid(self, cid: str) -> None:
         """Register a CID that the validator can use for challenges."""
@@ -89,18 +92,32 @@ class ChallengeDispatcher:
         if not _RUST_AVAILABLE:
             return False
 
+        now = time.time()
+
         # Enforce expiration before doing any expensive checks.
-        if time.time() > challenge.expires_at:
+        if now > challenge.expires_at:
             logger.warning("Received storage proof after challenge expiry.")
             return False
 
+        # Reject replayed nonces — purge expired ones first, then check.
+        self._purge_expired_nonces(now)
+        if challenge.nonce_hex in self._used_nonces:
+            logger.warning(f"Rejected replayed nonce: {challenge.nonce_hex[:16]}…")
+            return False
+        self._used_nonces[challenge.nonce_hex] = challenge.expires_at
+
         # Generate the expected response from the known embedding, then compare
-        # the proof the miner returned against what we compute ourselves.
+        # using constant-time digest comparison to prevent timing oracle attacks.
         expected_response = engram_core.generate_response(challenge, expected_embedding)
-        return (
-            expected_response.embedding_hash == response_embedding_hash
-            and expected_response.proof == response_proof
-        )
+        hash_ok  = hmac.compare_digest(expected_response.embedding_hash, response_embedding_hash)
+        proof_ok = hmac.compare_digest(expected_response.proof, response_proof)
+        return hash_ok and proof_ok
+
+    def _purge_expired_nonces(self, now: float) -> None:
+        """Remove nonces whose TTL has passed to keep memory bounded."""
+        expired = [n for n, exp in self._used_nonces.items() if now > exp]
+        for n in expired:
+            del self._used_nonces[n]
 
     def record_result(self, uid: str, passed: bool) -> None:
         record = self.get_record(uid)
