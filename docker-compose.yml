@@ -1,13 +1,26 @@
 version: "3.9"
 
+# ── Profiles ──────────────────────────────────────────────────────────────────
+# Default (FAISS — no Qdrant needed):
+#   docker compose up miner validator
+#
+# With Qdrant (production vector store):
+#   docker compose --profile qdrant up
+#   Set VECTOR_STORE_BACKEND=qdrant in .env.miner
+
 services:
+  # ── Qdrant (optional — production vector store) ───────────────────────────
   qdrant:
-    image: qdrant/qdrant:latest
+    profiles: [qdrant]
+    image: qdrant/qdrant:v1.9.0   # pinned for reproducibility
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"     # REST — localhost only
+      - "127.0.0.1:6334:6334"     # gRPC — localhost only
     volumes:
       - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+      QDRANT__STORAGE__ON_DISK_PAYLOAD: "true"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
@@ -15,6 +28,7 @@ services:
       timeout: 10s
       retries: 3
 
+  # ── Miner ─────────────────────────────────────────────────────────────────
   miner:
     build:
       context: .
@@ -23,7 +37,31 @@ services:
       - "8091:8091"
     env_file: .env.miner
     environment:
+      # Override these when running with --profile qdrant
       - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    volumes:
+      - miner_data:/app/data        # persists FAISS index + ground truth
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Miner with Qdrant backend ──────────────────────────────────────────────
+  miner-qdrant:
+    profiles: [qdrant]
+    build:
+      context: .
+      dockerfile: docker/miner.Dockerfile
+    ports:
+      - "8091:8091"
+    env_file: .env.miner
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
       - VECTOR_STORE_BACKEND=qdrant
     volumes:
       - miner_data:/app/data
@@ -38,20 +76,15 @@ services:
       retries: 5
       start_period: 20s
 
+  # ── Validator ─────────────────────────────────────────────────────────────
   validator:
     build:
       context: .
       dockerfile: docker/validator.Dockerfile
-    # Validator has no public HTTP port — it connects outbound to miners only.
-    # Uncomment the line below only if you add a local admin API.
-    # ports:
-    #   - "127.0.0.1:8092:8092"
+    # Validator connects outbound to miners only — no public port.
     env_file: .env.validator
     volumes:
-      - validator_data:/app/data
-    depends_on:
-      qdrant:
-        condition: service_healthy
+      - validator_data:/app/data    # persists ground truth + scoring state
     restart: unless-stopped
 
 volumes:

@@ -29,8 +29,12 @@ Configuration
 REQUIRE_HOTKEY_SIG=true   — reject requests with missing/invalid signatures
 REQUIRE_HOTKEY_SIG=false  — warn but allow (default; backward compatible)
 
-Set ALLOWED_VALIDATOR_HOTKEYS=5F...,5G...  (comma-separated SS58 addresses)
-to enforce a strict allowlist on top of signature verification.
+ALLOWED_VALIDATOR_HOTKEYS=5F...,5G...  (comma-separated SS58 addresses)
+  Enforce a strict allowlist on top of signature verification.
+
+REQUIRE_METAGRAPH_REG=true   — reject hotkeys not registered on the subnet
+REQUIRE_METAGRAPH_REG=false  — warn but allow (default)
+NETUID / SUBTENSOR_NETWORK   — used for metagraph registration checks
 """
 
 from __future__ import annotations
@@ -54,6 +58,38 @@ ALLOWED_HOTKEYS: set[str] | None = (
     if _raw_allowlist
     else None
 )
+
+REQUIRE_METAGRAPH_REG: bool = os.getenv("REQUIRE_METAGRAPH_REG", "false").lower() == "true"
+_NETUID = int(os.getenv("NETUID", "450"))
+_NETWORK = os.getenv("SUBTENSOR_ENDPOINT") or os.getenv("SUBTENSOR_NETWORK", "test")
+
+# ── Metagraph registration cache ──────────────────────────────────────────────
+# Refreshed at most once per METAGRAPH_CACHE_TTL_SECS to avoid hammering the chain.
+
+_METAGRAPH_CACHE_TTL_SECS: float = 300.0
+_metagraph_hotkeys: set[str] = set()
+_metagraph_last_refresh: float = 0.0
+
+
+def _refresh_metagraph() -> None:
+    """Pull registered hotkeys from the Bittensor metagraph into the local cache."""
+    global _metagraph_hotkeys, _metagraph_last_refresh
+    try:
+        import bittensor as bt
+        subtensor = bt.Subtensor(network=_NETWORK)
+        metagraph = subtensor.metagraph(netuid=_NETUID)
+        _metagraph_hotkeys = {axon.hotkey for axon in metagraph.axons if axon.hotkey}
+        _metagraph_last_refresh = time.time()
+        logger.debug(f"Metagraph cache refreshed | {len(_metagraph_hotkeys)} hotkeys on netuid={_NETUID}")
+    except Exception as exc:
+        logger.warning(f"Metagraph refresh failed — keeping stale cache: {exc}")
+
+
+def _is_registered(hotkey: str) -> bool:
+    """Return True if the hotkey is registered on the subnet (cached, refreshed every 5 min)."""
+    if time.time() - _metagraph_last_refresh > _METAGRAPH_CACHE_TTL_SECS:
+        _refresh_metagraph()
+    return hotkey in _metagraph_hotkeys
 
 
 # ── Bittensor keypair import (optional dep) ───────────────────────────────────
@@ -112,6 +148,18 @@ def verify_request(body: dict[str, Any], endpoint: str) -> str | None:
                 f"Hotkey {hotkey[:12]}… is not in the allowed-validator list. "
                 "Ask the miner operator to add your hotkey to ALLOWED_VALIDATOR_HOTKEYS."
             )
+
+    # ── Metagraph registration check ──────────────────────────────────────────
+    # Ensures the caller is actually registered on the subnet, not just any
+    # key that happened to pass signature verification.
+    if hotkey is not None:
+        if not _is_registered(hotkey):
+            if REQUIRE_METAGRAPH_REG:
+                raise AuthError(
+                    f"Hotkey {hotkey[:12]}… is not registered on subnet {_NETUID}. "
+                    f"Register with: btcli subnet register --netuid {_NETUID}"
+                )
+            logger.warning(f"Unregistered hotkey {hotkey[:12]}… (REQUIRE_METAGRAPH_REG=false — allowing)")
 
     # ── No signature provided ─────────────────────────────────────────────────
     if not all([hotkey, nonce, signature]):

@@ -237,3 +237,44 @@ def test_payload_hash_detects_change():
     h1 = _payload_hash({"text": "hello"})
     h2 = _payload_hash({"text": "HELLO"})
     assert h1 != h2
+
+
+# ── Metagraph registration check ──────────────────────────────────────────────
+
+def test_unregistered_hotkey_rejected_in_hard_mode():
+    body = _sign(KEYPAIR_A, "IngestSynapse", {"text": "test"})
+    with (
+        patch("engram.miner.auth._bt_keypair_verify", side_effect=_bt_verify_patch),
+        patch("engram.miner.auth.REQUIRE_SIG", False),
+        patch("engram.miner.auth.ALLOWED_HOTKEYS", None),
+        patch("engram.miner.auth.REQUIRE_METAGRAPH_REG", True),
+        patch("engram.miner.auth._is_registered", return_value=False),
+    ):
+        with pytest.raises(AuthError, match="not registered on subnet"):
+            verify_request(body, "IngestSynapse")
+
+
+def test_unregistered_hotkey_warns_in_soft_mode():
+    body = _sign(KEYPAIR_A, "IngestSynapse", {"text": "test"})
+    with (
+        patch("engram.miner.auth._bt_keypair_verify", side_effect=_bt_verify_patch),
+        patch("engram.miner.auth.REQUIRE_SIG", False),
+        patch("engram.miner.auth.ALLOWED_HOTKEYS", None),
+        patch("engram.miner.auth.REQUIRE_METAGRAPH_REG", False),
+        patch("engram.miner.auth._is_registered", return_value=False),
+    ):
+        result = verify_request(body, "IngestSynapse")
+    assert result == KEYPAIR_A.ss58_address
+
+
+def test_registered_hotkey_passes():
+    body = _sign(KEYPAIR_A, "IngestSynapse", {"text": "test"})
+    with (
+        patch("engram.miner.auth._bt_keypair_verify", side_effect=_bt_verify_patch),
+        patch("engram.miner.auth.REQUIRE_SIG", False),
+        patch("engram.miner.auth.ALLOWED_HOTKEYS", None),
+        patch("engram.miner.auth.REQUIRE_METAGRAPH_REG", True),
+        patch("engram.miner.auth._is_registered", return_value=True),
+    ):
+        result = verify_request(body, "IngestSynapse")
+    assert result == KEYPAIR_A.ss58_address
