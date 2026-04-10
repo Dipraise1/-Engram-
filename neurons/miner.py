@@ -349,6 +349,15 @@ async def run() -> None:
         # Detailed stats are available on /metrics (localhost only).
         return web.json_response({"status": "ok"})
 
+    async def handle_stats(req: web.Request) -> web.Response:
+        """Public stats endpoint — basic counters for the dashboard."""
+        return web.json_response({
+            "status": "ok",
+            "vectors": store.count(),
+            "peers": router.peer_count(),
+            "uid": our_uid,
+        })
+
     async def handle_metrics(req: web.Request) -> web.Response:
         """Prometheus metrics — localhost only to avoid leaking operational data."""
         peername = req.transport.get_extra_info("peername") if req.transport else None
@@ -377,6 +386,7 @@ async def run() -> None:
     app.router.add_post("/ChallengeSynapse",        handle_challenge)
     app.router.add_post("/namespace",               handle_namespace)
     app.router.add_get("/health",                   handle_health)
+    app.router.add_get("/stats",                    handle_stats)
     app.router.add_get("/metrics",                  handle_metrics)
     app.router.add_get("/wallet-stats",             handle_wallet_stats)
     app.router.add_get("/wallet-stats/{hotkey}",    handle_wallet_stats)

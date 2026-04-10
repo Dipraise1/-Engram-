@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, Plus, Loader2, CheckCircle, XCircle, Copy, Check } from "lucide-react";
+import { ArrowLeft, Search, Plus, Loader2, XCircle, Copy, Check, Code } from "lucide-react";
 
 interface IngestResult {
   cid: string;
@@ -32,6 +32,11 @@ export default function PlaygroundPage() {
 
   // ── Copy state ──────────────────────────────────────────────────────────────
   const [copiedCid, setCopiedCid] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState<"ingest" | "query" | null>(null);
+
+  // ── SDK snippet state ────────────────────────────────────────────────────────
+  const [lastIngestText, setLastIngestText] = useState<string | null>(null);
+  const [lastQueryText, setLastQueryText] = useState<string | null>(null);
 
   // ── Ingest ──────────────────────────────────────────────────────────────────
   async function handleIngest() {
@@ -54,6 +59,7 @@ export default function PlaygroundPage() {
         setIngestError(data.error || "Ingest failed.");
       } else {
         setIngestHistory((prev) => [{ cid: data.cid, text }, ...prev]);
+        setLastIngestText(text);
         setIngestText("");
       }
     } catch {
@@ -88,6 +94,7 @@ export default function PlaygroundPage() {
         setQueryError(data.error || "Query failed.");
       } else {
         setQueryResults(data.results || []);
+        setLastQueryText(text);
       }
     } catch {
       setQueryError("Could not reach the miner. Is it running?");
@@ -101,6 +108,14 @@ export default function PlaygroundPage() {
     navigator.clipboard.writeText(cid).then(() => {
       setCopiedCid(cid);
       setTimeout(() => setCopiedCid(null), 1500);
+    });
+  }
+
+  // ── Copy SDK snippet ─────────────────────────────────────────────────────────
+  function copyCode(type: "ingest" | "query", code: string) {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedCode(type);
+      setTimeout(() => setCopiedCode(null), 1500);
     });
   }
 
@@ -229,6 +244,33 @@ export default function PlaygroundPage() {
               ))}
             </div>
           )}
+
+          {/* SDK snippet */}
+          {lastIngestText && (() => {
+            const escaped = lastIngestText.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+            const code = `from engram.sdk import EngramClient\n\nclient = EngramClient("http://your-miner:8091")\ncid = client.ingest("${escaped}")\nprint(cid)  # v1::...`;
+            return (
+              <div className="mt-1 bg-black/50 border border-white/10 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+                  <div className="flex items-center gap-1.5 text-xs text-white/40">
+                    <Code className="w-3.5 h-3.5" />
+                    SDK equivalent
+                  </div>
+                  <button
+                    onClick={() => copyCode("ingest", code)}
+                    className="flex items-center gap-1 text-xs text-white/40 hover:text-white transition-colors"
+                  >
+                    {copiedCode === "ingest" ? (
+                      <><Check className="w-3 h-3 text-green-400" /><span className="text-green-400">Copied</span></>
+                    ) : (
+                      <><Copy className="w-3 h-3" />Copy</>
+                    )}
+                  </button>
+                </div>
+                <pre className="px-3 py-3 text-xs text-purple-200 font-mono overflow-x-auto leading-relaxed">{code}</pre>
+              </div>
+            );
+          })()}
         </div>
 
         {/* ── Query panel ──────────────────────────────────────────────────── */}
@@ -343,6 +385,33 @@ export default function PlaygroundPage() {
               </div>
             </div>
           )}
+
+          {/* SDK snippet */}
+          {lastQueryText && (() => {
+            const escaped = lastQueryText.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+            const code = `from engram.sdk import EngramClient\n\nclient = EngramClient("http://your-miner:8091")\nresults = client.query("${escaped}", top_k=5)\nfor r in results:\n    print(r["score"], r["cid"])`;
+            return (
+              <div className="mt-1 bg-black/50 border border-white/10 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+                  <div className="flex items-center gap-1.5 text-xs text-white/40">
+                    <Code className="w-3.5 h-3.5" />
+                    SDK equivalent
+                  </div>
+                  <button
+                    onClick={() => copyCode("query", code)}
+                    className="flex items-center gap-1 text-xs text-white/40 hover:text-white transition-colors"
+                  >
+                    {copiedCode === "query" ? (
+                      <><Check className="w-3 h-3 text-green-400" /><span className="text-green-400">Copied</span></>
+                    ) : (
+                      <><Copy className="w-3 h-3" />Copy</>
+                    )}
+                  </button>
+                </div>
+                <pre className="px-3 py-3 text-xs text-purple-200 font-mono overflow-x-auto leading-relaxed">{code}</pre>
+              </div>
+            );
+          })()}
         </div>
 
       </div>

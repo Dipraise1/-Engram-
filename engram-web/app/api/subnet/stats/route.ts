@@ -7,25 +7,25 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
-    const res = await fetch(`${MINER_URL}/health`, {
+    const res = await fetch(`${MINER_URL}/stats`, {
       next: { revalidate: 0 },
       signal: AbortSignal.timeout(5000),
     });
 
-    if (!res.ok) throw new Error(`health check failed: ${res.status}`);
+    if (!res.ok) throw new Error(`stats check failed: ${res.status}`);
 
-    const health = await res.json();
+    const stats = await res.json();
 
     return NextResponse.json({
       netuid: parseInt(NETUID),
-      vectors: health.vectors ?? 0,
-      miners: health.peers ?? 0,
+      vectors: stats.vectors ?? 0,
+      miners: stats.peers ?? 0,
       validators: 1,
       block: null,
       avg_score: null,
       queries_today: null,
       uptime_pct: null,
-      status: health.status ?? "unknown",
+      status: stats.status ?? "unknown",
     });
   } catch {
     return NextResponse.json({
