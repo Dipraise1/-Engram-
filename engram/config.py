@@ -42,6 +42,8 @@ CHALLENGE_INTERVAL_SECS: int = 300
 CHALLENGE_TIMEOUT_SECS: int = 10
 CHALLENGE_NONCE_BYTES: int = 32
 SLASH_THRESHOLD: float = 0.5
+MIN_CHALLENGES_BEFORE_SLASH: int = 5   # minimum sample size before a miner can be slashed
+MAX_KNOWN_CIDS: int = 100_000          # cap to prevent unbounded memory growth
 
 # ── Anti-spam ──────────────────────────────────────────────────────────────────
 MIN_INGEST_STAKE_TAO: float = 0.001

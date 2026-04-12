@@ -8,13 +8,22 @@ Uses the Rust engram_core module for challenge generation and verification.
 from __future__ import annotations
 
 import hmac
-import random
+import re
+import secrets
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from loguru import logger
 
-from engram.config import CHALLENGE_TIMEOUT_SECS, SLASH_THRESHOLD
+from engram.config import (
+    CHALLENGE_TIMEOUT_SECS,
+    MAX_KNOWN_CIDS,
+    MIN_CHALLENGES_BEFORE_SLASH,
+    SLASH_THRESHOLD,
+)
+
+# Reject UIDs that could inject content into log lines or exceed reasonable length.
+_UID_RE = re.compile(r"^[A-Za-z0-9_\-\.]{1,64}$")
 
 try:
     import engram_core
@@ -46,7 +55,7 @@ class MinerProofRecord:
 
     @property
     def should_slash(self) -> bool:
-        return self.total_challenges >= 5 and self.success_rate < SLASH_THRESHOLD
+        return self.total_challenges >= MIN_CHALLENGES_BEFORE_SLASH and self.success_rate < SLASH_THRESHOLD
 
 
 class ChallengeDispatcher:
@@ -57,16 +66,24 @@ class ChallengeDispatcher:
 
     def __init__(self) -> None:
         self._records: dict[str, MinerProofRecord] = {}
-        self._known_cids: list[str] = []   # CIDs the validator has ground truth for
+        self._known_cids: list[str] = []    # ordered list for O(1) random sampling
+        self._known_cids_set: set[str] = set()  # shadow set for O(1) dedup checks
         # Tracks used nonces (hex → expiry timestamp) to prevent replay within TTL window
         self._used_nonces: dict[str, float] = {}
 
     def register_cid(self, cid: str) -> None:
         """Register a CID that the validator can use for challenges."""
-        if cid not in self._known_cids:
+        if cid not in self._known_cids_set:
+            if len(self._known_cids) >= MAX_KNOWN_CIDS:
+                logger.warning("MAX_KNOWN_CIDS reached; dropping oldest CID to make room.")
+                removed = self._known_cids.pop(0)
+                self._known_cids_set.discard(removed)
             self._known_cids.append(cid)
+            self._known_cids_set.add(cid)
 
     def get_record(self, uid: str) -> MinerProofRecord:
+        if not _UID_RE.match(uid):
+            raise ValueError(f"Invalid miner UID: {uid!r}")
         if uid not in self._records:
             self._records[uid] = MinerProofRecord(uid=uid)
         return self._records[uid]
@@ -120,18 +137,19 @@ class ChallengeDispatcher:
             del self._used_nonces[n]
 
     def record_result(self, uid: str, passed: bool) -> None:
-        record = self.get_record(uid)
+        record = self.get_record(uid)  # validates uid
         record.total_challenges += 1
         record.last_challenged_at = time.time()
+        safe_uid = uid  # already validated as alphanumeric by get_record
         if passed:
             record.passed_challenges += 1
-            logger.debug(f"Challenge PASSED | miner={uid} | rate={record.success_rate:.2f}")
+            logger.debug(f"Challenge PASSED | miner={safe_uid} | rate={record.success_rate:.2f}")
         else:
-            logger.warning(f"Challenge FAILED | miner={uid} | rate={record.success_rate:.2f}")
+            logger.warning(f"Challenge FAILED | miner={safe_uid} | rate={record.success_rate:.2f}")
             if record.should_slash:
-                logger.error(f"SLASH THRESHOLD HIT | miner={uid}")
+                logger.error(f"SLASH THRESHOLD HIT | miner={safe_uid}")
 
     def pick_random_cid(self) -> str | None:
         if not self._known_cids:
             return None
-        return random.choice(self._known_cids)
+        return secrets.choice(self._known_cids)
