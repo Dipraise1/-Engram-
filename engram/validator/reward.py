@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import bittensor as bt
 from loguru import logger
 
 from engram.validator.scorer import compute_miner_score, normalize_scores

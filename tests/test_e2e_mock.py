@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from unittest.mock import patch, MagicMock
 
-import bittensor as bt
+bt = pytest.importorskip("bittensor", reason="bittensor not installed")
 
 from engram.protocol import IngestSynapse, QuerySynapse, ChallengeSynapse
 from engram.miner.store import FAISSStore, VectorRecord
