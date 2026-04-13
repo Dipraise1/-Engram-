@@ -284,14 +284,15 @@ function MessageBubble({ msg, readOnly }: { msg: Message; readOnly: boolean }) {
             remarkPlugins={[remarkGfm]}
             components={{
               p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-              code: ({ inline, children, ...props }: React.HTMLAttributes<HTMLElement> & { inline?: boolean }) =>
-                inline ? (
-                  <code className="bg-white/10 rounded px-1 py-0.5 font-mono text-xs" {...props}>{children}</code>
-                ) : (
-                  <pre className="bg-black/30 rounded-lg p-3 overflow-x-auto my-2">
-                    <code className="font-mono text-xs text-slate-200" {...props}>{children}</code>
-                  </pre>
-                ),
+              // pre wraps block code; code handles inline
+              pre: ({ children }) => (
+                <pre className="bg-black/30 rounded-lg p-3 overflow-x-auto my-2 text-xs font-mono text-slate-200">
+                  {children}
+                </pre>
+              ),
+              code: ({ children, ...props }) => (
+                <code className="bg-white/10 rounded px-1 py-0.5 font-mono text-xs" {...props}>{children}</code>
+              ),
               ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2">{children}</ul>,
               ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2">{children}</ol>,
               li: ({ children }) => <li className="text-slate-200">{children}</li>,
@@ -722,6 +723,13 @@ function MemoryPageInner() {
         const data = await res.json();
         if (data.error?.includes("XAI_API_KEY")) setNoApiKey(true);
         setError(data.error ?? "Service unavailable.");
+        setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
+        setLoading(false);
+        return;
+      }
+
+      if (res.status === 429) {
+        setError("Rate limit reached — max 30 messages per hour. Try again later.");
         setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
         setLoading(false);
         return;
