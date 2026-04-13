@@ -1,7 +1,8 @@
 .env
-.env.miner
-.env.miner2
-.env.validator
+.env.*
+*.env
+.env.local
+.env.*.local
 message_and_signature.txt
 *.pyc
 __pycache__/
