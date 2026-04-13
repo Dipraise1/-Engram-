@@ -28,8 +28,8 @@ def __getattr__(name: str):
         except ImportError:
             pass
         try:
-            from engram.sdk.llama_index import EngramVectorStore
-            return EngramVectorStore
+            from engram.sdk.llama_index import EngramVectorStore as _LIVectorStore
+            return _LIVectorStore
         except ImportError:
             pass
         raise ImportError(

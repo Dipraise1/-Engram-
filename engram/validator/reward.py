@@ -6,6 +6,8 @@ Aggregates miner scores and sets Bittensor weights.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import bittensor as bt
 from loguru import logger
@@ -18,7 +20,7 @@ class RewardManager:
     Collects per-miner evaluation results and sets weights on-chain.
     """
 
-    def __init__(self, subtensor: bt.subtensor, wallet: bt.wallet, netuid: int) -> None:
+    def __init__(self, subtensor: Any, wallet: Any, netuid: int) -> None:
         self._subtensor = subtensor
         self._wallet = wallet
         self._netuid = netuid
@@ -27,7 +29,7 @@ class RewardManager:
 
     def set_weights(
         self,
-        metagraph: bt.metagraph,
+        metagraph: Any,
         recall_scores: dict[int, float],          # uid → recall@K
         latency_scores: dict[int, float | None],  # uid → latency_ms
         proof_rates: dict[int, float],            # uid → proof success rate

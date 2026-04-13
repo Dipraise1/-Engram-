@@ -277,9 +277,9 @@ def status(
         hotkey_short = axon.hotkey[:12] + "…" if axon.hotkey else "—"
         is_me = "← [bold]you[/bold]" if axon.hotkey == my_hotkey else ""
 
-        stake = float(meta.S[uid_i]) if hasattr(meta, "S") else 0.0
-        trust = float(meta.T[uid_i]) if hasattr(meta, "T") else 0.0
-        incentive = float(meta.I[uid_i]) if hasattr(meta, "I") else 0.0
+        stake = float(meta.S[uid_i]) if hasattr(meta, "S") else 0.0  # type: ignore[index]
+        trust = float(meta.T[uid_i]) if hasattr(meta, "T") else 0.0  # type: ignore[index]
+        incentive = float(meta.I[uid_i]) if hasattr(meta, "I") else 0.0  # type: ignore[index]
 
         table.add_row(
             str(uid_i),

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -44,11 +45,16 @@ class SearchResult:
 
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
-class VectorStore:
+class VectorStore(ABC):
+    @abstractmethod
     def upsert(self, record: VectorRecord) -> None: ...
+    @abstractmethod
     def search(self, query: np.ndarray, top_k: int = DEFAULT_TOP_K, namespace: str = _PUBLIC_NS) -> list[SearchResult]: ...
+    @abstractmethod
     def get(self, cid: str, namespace: str = _PUBLIC_NS) -> VectorRecord | None: ...
+    @abstractmethod
     def delete(self, cid: str) -> bool: ...
+    @abstractmethod
     def count(self) -> int: ...
 
 
@@ -137,9 +143,9 @@ class QdrantStore(VectorStore):
         )
         return [
             SearchResult(
-                cid=hit.payload.get("cid", ""),
+                cid=(hit.payload or {}).get("cid", ""),
                 score=float(hit.score),
-                metadata={k: v for k, v in hit.payload.items() if k not in ("cid", "_ns")},
+                metadata={k: v for k, v in (hit.payload or {}).items() if k not in ("cid", "_ns")},
             )
             for hit in results.points
         ]
@@ -155,14 +161,14 @@ class QdrantStore(VectorStore):
         if not results:
             return None
         r = results[0]
-        stored_ns = r.payload.get("_ns", _PUBLIC_NS)
+        stored_ns = (r.payload or {}).get("_ns", _PUBLIC_NS)
         # Enforce namespace isolation — don't return records from other namespaces
         if stored_ns != namespace:
             return None
         return VectorRecord(
             cid=cid,
             embedding=np.array(r.vector, dtype=np.float32),
-            metadata={k: v for k, v in r.payload.items() if k not in ("cid", "_ns")},
+            metadata={k: v for k, v in (r.payload or {}).items() if k not in ("cid", "_ns")},
             namespace=stored_ns,
         )
 

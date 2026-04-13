@@ -59,7 +59,7 @@ class IngestSynapse(bt.Synapse):
     cid: str | None = Field(default=None, description="Content identifier returned by the miner.")
     error: str | None = Field(default=None, description="Error message if ingest failed.")
 
-    def deserialize(self) -> str | None:
+    def deserialize(self) -> Any:
         return self.cid
 
 
@@ -104,7 +104,7 @@ class QuerySynapse(bt.Synapse):
     )
     error: str | None = Field(default=None)
 
-    def deserialize(self) -> list[dict[str, Any]]:
+    def deserialize(self) -> Any:
         return self.results
 
 
@@ -136,5 +136,5 @@ class ChallengeSynapse(bt.Synapse):
     )
     error: str | None = Field(default=None)
 
-    def deserialize(self) -> dict[str, str | None]:
+    def deserialize(self) -> Any:
         return {"embedding_hash": self.embedding_hash, "proof": self.proof}

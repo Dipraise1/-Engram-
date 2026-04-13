@@ -162,7 +162,7 @@ def verify_request(body: dict[str, Any], endpoint: str) -> str | None:
             logger.warning(f"Unregistered hotkey {hotkey[:12]}… (REQUIRE_METAGRAPH_REG=false — allowing)")
 
     # ── No signature provided ─────────────────────────────────────────────────
-    if not all([hotkey, nonce, signature]):
+    if hotkey is None or nonce is None or signature is None:
         if REQUIRE_SIG:
             raise AuthError(
                 "This miner requires signed requests. "

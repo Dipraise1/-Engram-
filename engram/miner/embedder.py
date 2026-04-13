@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -27,8 +28,8 @@ class Embedder:
 
     def __init__(self, backend: str = "openai") -> None:
         self.backend = backend
-        self._client = None
-        self._local_model = None
+        self._client: Any = None       # OpenAI client (set in _init_openai)
+        self._local_model: Any = None  # SentenceTransformer (set in _init_local)
 
         if backend == "openai":
             self._init_openai()

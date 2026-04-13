@@ -10,6 +10,13 @@ Responsibilities:
   - On ingest: push a vector to all assigned miners
   - On miner failure: detect under-replication and re-replicate
   - Track replication health per CID
+
+Multi-miner failure handling:
+  - handle_miners_offline(uids) processes all failures atomically in a single
+    pass, deduplicates affected CIDs, and returns a priority-ordered repair plan
+  - LOST and CRITICAL CIDs are scheduled before DEGRADED ones
+  - get_repair_targets falls back to any online peer if the DHT-assigned peers
+    are themselves offline (avoids silent data loss during coordinated failures)
 """
 
 from __future__ import annotations
@@ -17,6 +24,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Iterable
 
 from loguru import logger
 
@@ -29,8 +37,16 @@ from engram.storage.dht import DHTRouter, Peer
 class ReplicationStatus(str, Enum):
     HEALTHY   = "healthy"    # stored on >= REPLICATION_FACTOR miners
     DEGRADED  = "degraded"   # stored on 1 < n < REPLICATION_FACTOR miners
-    CRITICAL  = "critical"   # stored on 1 miner only
+    CRITICAL  = "critical"   # stored on exactly 1 miner
     LOST      = "lost"       # no known replicas
+
+
+# Priority values: lower number = more urgent.
+_STATUS_PRIORITY: dict[ReplicationStatus, int] = {
+    ReplicationStatus.LOST:     0,
+    ReplicationStatus.CRITICAL: 1,
+    ReplicationStatus.DEGRADED: 2,
+}
 
 
 @dataclass
@@ -59,6 +75,25 @@ class ReplicationRecord:
     @property
     def needs_replication(self) -> bool:
         return self.replica_count < REPLICATION_FACTOR
+
+
+@dataclass(order=True)
+class RepairTask:
+    """
+    A single unit of repair work, sortable by urgency.
+
+    Fields are ordered so that dataclass comparison gives LOST < CRITICAL < DEGRADED,
+    which means `sorted(tasks)` produces the highest-urgency work first.
+    """
+    priority: int                              # 0=LOST, 1=CRITICAL, 2=DEGRADED
+    cid: str               = field(compare=False)
+    status: ReplicationStatus = field(compare=False)
+    targets: list[Peer]    = field(compare=False, default_factory=list)
+
+    @property
+    def is_actionable(self) -> bool:
+        """True if there are online peers that can receive the repair copy."""
+        return len(self.targets) > 0
 
 
 # ── Replication Manager ───────────────────────────────────────────────────────
@@ -129,32 +164,50 @@ class ReplicationManager:
         """
         Return peers that should receive a repair copy of a CID.
 
-        Called when a CID is under-replicated. Returns peers that are:
-          1. In the assigned set for this CID
-          2. Not already confirmed holders
-          3. Currently online (in routing table)
+        Strategy:
+          1. Prefer DHT-assigned peers that are online but not yet confirmed.
+          2. If the assigned set doesn't have enough online peers (e.g., they
+             also went offline), fall back to any other online peer.
+             This prevents silent data loss when a coordinated failure takes out
+             both the original holders AND their DHT-assigned replacements.
         """
         record = self._records.get(cid)
         if not record:
             return []
 
-        online_uids = {p.uid for p in self._router.all_peers()}
+        needed = REPLICATION_FACTOR - record.replica_count
+        if needed <= 0:
+            return []
+
+        online_peers = self._router.all_peers()
+        online_uids = {p.uid for p in online_peers}
         confirmed = set(record.confirmed_uids)
 
-        # Prefer assigned miners first, then any online peer
+        # Stage 1: DHT-assigned peers that are online and not yet confirmed
         assigned = self._router.assign(cid, replication=REPLICATION_FACTOR * 2)
-        candidates = [
+        assigned_uids = {p.uid for p in assigned}
+        candidates: list[Peer] = [
             p for p in assigned
             if p.uid not in confirmed and p.uid in online_uids
         ]
 
-        needed = REPLICATION_FACTOR - record.replica_count
+        # Stage 2: fallback to any online peer not already holding the CID
+        if len(candidates) < needed:
+            fallback = [
+                p for p in online_peers
+                if p.uid not in confirmed and p.uid not in assigned_uids
+            ]
+            candidates.extend(fallback)
+
         return candidates[:needed]
 
     def handle_miner_offline(self, uid: int) -> list[str]:
         """
-        Called when a miner goes offline.
+        Called when a single miner goes offline.
         Returns CIDs that are now under-replicated and need repair.
+
+        For simultaneous multi-miner failures, prefer handle_miners_offline()
+        which processes all UIDs atomically to avoid duplicate repair work.
         """
         affected = []
         for cid, record in self._records.items():
@@ -168,6 +221,91 @@ class ReplicationManager:
                 f"Miner uid={uid} offline | {len(affected)} CIDs need re-replication"
             )
         return affected
+
+    def handle_miners_offline(self, uids: Iterable[int]) -> list[RepairTask]:
+        """
+        Handle multiple miners going offline simultaneously.
+
+        Processes all UIDs in a single pass over the record set so that:
+          - Each CID appears in the output at most once (no duplicate repair tasks)
+          - The status used for prioritisation reflects ALL losses, not just the
+            first one processed (avoids underestimating severity)
+          - Returns a priority-ordered repair plan: LOST → CRITICAL → DEGRADED
+
+        Args:
+            uids: UIDs of miners that have gone offline.
+
+        Returns:
+            Sorted list of RepairTask, highest-urgency first.
+        """
+        uid_set = set(uids)
+        if not uid_set:
+            return []
+
+        affected_cids: set[str] = set()
+
+        for cid, record in self._records.items():
+            # Find which of the offline UIDs were confirmed holders of this CID
+            offline_confirmed = uid_set & set(record.confirmed_uids)
+            if not offline_confirmed:
+                continue
+
+            # Remove them all in one go
+            for uid in offline_confirmed:
+                record.confirmed_uids.remove(uid)
+                logger.warning(
+                    f"Replica lost | cid={cid[:16]}... | uid={uid} | "
+                    f"remaining={record.replica_count}"
+                )
+
+            if record.needs_replication:
+                affected_cids.add(cid)
+
+        if affected_cids:
+            logger.warning(
+                f"{len(uid_set)} miners offline | "
+                f"{len(affected_cids)} CIDs need re-replication"
+            )
+
+        return self._build_repair_tasks(affected_cids)
+
+    def prioritized_repair_queue(self, cids: set[str] | None = None) -> list[RepairTask]:
+        """
+        Build a priority-ordered repair plan for under-replicated CIDs.
+
+        Args:
+            cids: restrict to this subset of CIDs (default: all under-replicated)
+
+        Returns:
+            RepairTask list sorted by urgency: LOST first, then CRITICAL, then DEGRADED.
+            Tasks where no online peer is available (is_actionable=False) are still
+            included so the caller can log them and retry later.
+        """
+        source_cids = cids if cids is not None else {
+            cid for cid, rec in self._records.items() if rec.needs_replication
+        }
+        return self._build_repair_tasks(source_cids)
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _build_repair_tasks(self, cids: set[str]) -> list[RepairTask]:
+        """Build and sort RepairTask objects for a set of CIDs."""
+        tasks: list[RepairTask] = []
+        for cid in cids:
+            record = self._records.get(cid)
+            if record is None or not record.needs_replication:
+                continue
+            status = record.status
+            priority = _STATUS_PRIORITY.get(status, 9)
+            targets = self.get_repair_targets(cid)
+            tasks.append(RepairTask(
+                priority=priority,
+                cid=cid,
+                status=status,
+                targets=targets,
+            ))
+        tasks.sort()
+        return tasks
 
     def total_cids(self) -> int:
         return len(self._records)

@@ -29,8 +29,8 @@ jobs:
       - name: Build engram-core wheel
         run: |
           pip install maturin
-          maturin build --release --manifest-path engram-core/Cargo.toml
-          pip install target/wheels/engram_core-*.whl
+          maturin build --release --manifest-path engram-core/Cargo.toml --out dist
+          pip install dist/engram_core-*.whl
 
       - name: Install Python dependencies
         run: pip install ".[dev]"
@@ -95,18 +95,31 @@ jobs:
         run: pip install maturin
 
       - name: Build engram-core wheel
-        run: maturin build --release --manifest-path engram-core/Cargo.toml
+        run: maturin build --release --manifest-path engram-core/Cargo.toml --out dist
 
       - name: Smoke-test wheel
         run: |
-          pip install target/wheels/engram_core-*.whl
+          pip install dist/engram_core-*.whl
           python -c "
           import engram_core
+
+          # CID round-trip
           cid = engram_core.generate_cid([0.1, 0.2, 0.3], {}, 'v1')
           assert cid.startswith('v1::') and len(cid.split('::')[1]) == 64
+
+          # Single-CID proof
           challenge = engram_core.generate_challenge(cid, 30)
           response = engram_core.generate_response(challenge, [0.1, 0.2, 0.3])
           assert engram_core.verify_response(challenge, response, [0.1, 0.2, 0.3])
+
+          # Batch proof
+          cid2 = engram_core.generate_cid([0.4, 0.5, 0.6], {}, 'v1')
+          batch = engram_core.generate_batch_challenge([cid, cid2], 30)
+          embs = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+          br = engram_core.generate_batch_response(batch, embs)
+          results = engram_core.verify_batch_response(batch, br, embs)
+          assert results == [True, True], f'batch verify failed: {results}'
+
           print('engram_core smoke test: PASS')
           "
 
