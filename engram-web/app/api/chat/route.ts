@@ -4,7 +4,7 @@ const MINER_URL = process.env.MINER_API_URL || "http://98.97.76.65:8091";
 const XAI_API_KEY = process.env.XAI_API_KEY || "";
 
 // How many past memories to inject as context
-const MEMORY_TOP_K = 6;
+const MEMORY_TOP_K = 12;
 
 export const runtime = "nodejs";
 
@@ -74,29 +74,29 @@ export async function POST(req: Request) {
   const userCid = await ingestToEngram(userMessage, {
     role: "user",
     session: sessionId,
+    text: userMessage.slice(0, 500),  // stored so recall can read the actual content
     ts: String(Date.now()),
   });
 
   // ── 3. Build system prompt with memory context ───────────────────────────────
   const memoryLines = memories
-    .filter((m) => m.metadata?.role)
+    .filter((m) => m.metadata?.role && m.metadata?.text)  // only include if we have actual text
     .map((m) => {
       const role = m.metadata.role === "assistant" ? "Assistant" : "User";
-      const text = m.metadata.text ?? m.text ?? m.cid;
-      return `[${role}]: ${text}`;
+      return `[${role}]: ${m.metadata.text}`;
     });
 
   const memoryContext =
     memoryLines.length > 0
-      ? `\n\nRELEVANT MEMORIES (from past conversations):\n${memoryLines.join("\n")}`
+      ? `\n\nPAST CONVERSATION MEMORIES (retrieved from Engram network — these are real things the user said or you replied):\n${memoryLines.join("\n")}`
       : "";
 
-  const systemPrompt = `You are Engram AI — an AI assistant with permanent, decentralized memory powered by the Engram network on Bittensor. Unlike other AI assistants, you never forget: every conversation is stored as a vector embedding across a decentralized network of miners, cryptographically proven to exist.
+  const systemPrompt = `You are Engram AI — an AI assistant with permanent, decentralized memory powered by the Engram network on Bittensor. Every conversation turn is stored as a vector embedding across a decentralized network of miners, cryptographically proven to exist.
 
-Your personality: thoughtful, technically curious, and honest. You speak plainly and directly. You remember everything the user has ever told you.
+Your personality: thoughtful, direct, and honest. You remember everything the user has ever told you across all sessions.
 ${memoryContext}
 
-When you have memory context above, weave relevant past details naturally into your responses without explicitly listing them. If the user asks what you remember, tell them.`;
+IMPORTANT: The memories above are real excerpts from past conversations with this user. Treat them as factual. If the user asks what you remember about them (their age, what they said, etc.), refer to the memories above and answer accurately. Never claim you don't know something that appears in the memories.`;
 
   // ── 4. Call xAI Grok with streaming (OpenAI-compatible API) ──────────────────
   const grokRes = await fetch("https://api.x.ai/v1/chat/completions", {
