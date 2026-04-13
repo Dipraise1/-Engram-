@@ -22,8 +22,11 @@ import asyncio
 import hashlib
 import hmac as _hmac
 import ipaddress
+import json
+import sqlite3
 import struct
 import time
+from pathlib import Path
 
 import bittensor as bt
 from aiohttp import web
@@ -68,6 +71,52 @@ def _proof_response(nonce_hex: str, embedding: list[float]) -> tuple[str, str]:
     return embedding_hash, proof
 
 
+# ── Chat history store (SQLite) ───────────────────────────────────────────────
+
+class ChatStore:
+    """
+    Persists chat history per anonymous user ID in a local SQLite database.
+    Thread-safe via check_same_thread=False + WAL mode.
+    """
+
+    MAX_MESSAGES = 200  # per user, keeps oldest messages pruned
+
+    def __init__(self, db_path: str = "./data/chats.db") -> None:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS chats (
+                user_id   TEXT NOT NULL,
+                ts        INTEGER NOT NULL,
+                role      TEXT NOT NULL,
+                content   TEXT NOT NULL
+            )
+        """)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_user ON chats(user_id, ts)")
+        self._conn.commit()
+
+    def save(self, user_id: str, messages: list[dict]) -> None:
+        """Replace all messages for a user (upsert-style)."""
+        with self._conn:
+            self._conn.execute("DELETE FROM chats WHERE user_id = ?", (user_id,))
+            now = int(time.time() * 1000)
+            rows = [
+                (user_id, now + i, m.get("role", "user"), m.get("content", ""))
+                for i, m in enumerate(messages[-self.MAX_MESSAGES:])
+            ]
+            self._conn.executemany(
+                "INSERT INTO chats(user_id, ts, role, content) VALUES(?,?,?,?)", rows
+            )
+
+    def load(self, user_id: str) -> list[dict]:
+        cur = self._conn.execute(
+            "SELECT role, content FROM chats WHERE user_id = ? ORDER BY ts ASC",
+            (user_id,),
+        )
+        return [{"role": row[0], "content": row[1]} for row in cur.fetchall()]
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def run() -> None:
@@ -99,6 +148,7 @@ async def run() -> None:
                                       namespace_registry=ns_registry)
     rate_limiter       = RateLimiter()
     wallet_tracker     = WalletTracker()
+    chat_store         = ChatStore(os.getenv("CHAT_DB_PATH", "./data/chats.db"))
 
     logger.info(f"Vector store: {backend} | {store.count()} vectors loaded")
 
@@ -344,6 +394,30 @@ async def run() -> None:
             return web.json_response(wallet_tracker.get_stats(hotkey))
         return web.json_response(wallet_tracker.summary())
 
+    async def handle_chat_history_get(req: web.Request) -> web.Response:
+        """GET /chat-history/{user_id} — load a user's chat history."""
+        user_id = req.match_info.get("user_id", "").strip()
+        if not user_id or len(user_id) > 128:
+            return web.json_response({"error": "Invalid user_id"}, status=400)
+        messages = chat_store.load(user_id)
+        return web.json_response({"messages": messages})
+
+    async def handle_chat_history_post(req: web.Request) -> web.Response:
+        """POST /chat-history — save a user's chat history."""
+        try:
+            body = await req.json()
+            user_id  = (body.get("user_id") or "").strip()
+            messages = body.get("messages") or []
+            if not user_id or len(user_id) > 128:
+                return web.json_response({"error": "Invalid user_id"}, status=400)
+            if not isinstance(messages, list):
+                return web.json_response({"error": "messages must be a list"}, status=400)
+            chat_store.save(user_id, messages)
+            return web.json_response({"ok": True, "saved": len(messages)})
+        except Exception as exc:
+            logger.error(f"Chat history save error: {exc}")
+            return web.json_response({"error": "Internal error"}, status=500)
+
     async def handle_health(req: web.Request) -> web.Response:
         # Keep health minimal — just a liveness signal, no internal data.
         # Detailed stats are available on /metrics (localhost only).
@@ -385,6 +459,8 @@ async def run() -> None:
     app.router.add_post("/QuerySynapse",            handle_query)
     app.router.add_post("/ChallengeSynapse",        handle_challenge)
     app.router.add_post("/namespace",               handle_namespace)
+    app.router.add_get("/chat-history/{user_id}",   handle_chat_history_get)
+    app.router.add_post("/chat-history",            handle_chat_history_post)
     app.router.add_get("/health",                   handle_health)
     app.router.add_get("/stats",                    handle_stats)
     app.router.add_get("/metrics",                  handle_metrics)

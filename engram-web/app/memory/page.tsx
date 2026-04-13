@@ -68,29 +68,55 @@ function getSessionId(): string {
   return id;
 }
 
-// ── Persist messages in localStorage ──────────────────────────────────────────
+// ── Local cache (localStorage) ────────────────────────────────────────────────
 
-function loadMessages(sessionId: string): Message[] {
+function localLoad(uid: string): Message[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(`engram_msgs_${sessionId}`);
+    const raw = localStorage.getItem(`engram_msgs_${uid}`);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveMessages(sessionId: string, messages: Message[]) {
+function localSave(uid: string, messages: Message[]) {
   if (typeof window === "undefined") return;
   try {
-    // Keep last 50 messages to stay under localStorage quota
-    localStorage.setItem(
-      `engram_msgs_${sessionId}`,
-      JSON.stringify(messages.slice(-50))
+    localStorage.setItem(`engram_msgs_${uid}`, JSON.stringify(messages.slice(-200)));
+  } catch { /* quota exceeded */ }
+}
+
+// ── Server sync ───────────────────────────────────────────────────────────────
+
+async function serverLoad(uid: string): Promise<Message[]> {
+  try {
+    const res = await fetch(`/api/history?uid=${encodeURIComponent(uid)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.messages ?? []).map(
+      (m: { role: string; content: string }, i: number) => ({
+        id: `srv_${i}`,
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })
     );
   } catch {
-    // quota exceeded — ignore
+    return [];
   }
+}
+
+async function serverSave(uid: string, messages: Message[]) {
+  try {
+    await fetch("/api/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uid,
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      }),
+    });
+  } catch { /* best-effort */ }
 }
 
 // ── Memory pill ────────────────────────────────────────────────────────────────
@@ -267,28 +293,40 @@ function MemoryPageInner() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<Message[]>([]);
 
-  // Initialize session + load persisted or shared messages
+  // Initialize: load from server (source of truth), fall back to localStorage
   useEffect(() => {
     if (readOnly && viewParam) {
       const shared = decodeShare(viewParam);
       if (shared) {
-        setMessages(
-          shared.map((m, i) => ({ id: `shared_${i}`, role: m.role, content: m.content }))
-        );
+        setMessages(shared.map((m, i) => ({ id: `shared_${i}`, role: m.role, content: m.content })));
       }
-    } else {
-      sessionId.current = getSessionId();
-      const persisted = loadMessages(sessionId.current);
-      setMessages(persisted);
+      setInitialized(true);
+      return;
     }
-    setInitialized(true);
+
+    sessionId.current = getSessionId();
+    const uid = sessionId.current;
+
+    // Show local cache immediately (instant), then hydrate from server
+    const local = localLoad(uid);
+    if (local.length > 0) setMessages(local);
+
+    serverLoad(uid).then((serverMsgs) => {
+      if (serverMsgs.length > 0) {
+        // Server has more messages (e.g. different device) — prefer server
+        setMessages(serverMsgs);
+        localSave(uid, serverMsgs);
+      }
+      setInitialized(true);
+    });
   }, [readOnly, viewParam]);
 
-  // Persist messages whenever they change
+  // Keep both caches in sync whenever messages change
   useEffect(() => {
     messagesRef.current = messages;
     if (!readOnly && initialized && sessionId.current) {
-      saveMessages(sessionId.current, messages);
+      localSave(sessionId.current, messages);
+      serverSave(sessionId.current, messages);
     }
   }, [messages, readOnly, initialized]);
 
