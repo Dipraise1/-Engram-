@@ -293,14 +293,19 @@ class FAISSStore(VectorStore):
     def delete(self, cid: str) -> bool:
         if cid not in self._cid_to_id:
             return False
-        # FAISS HNSW doesn't support removal; mark as deleted
-        del self._cid_to_id[cid]
+        # FAISS HNSW doesn't support physical removal, so we tombstone the slot:
+        # remove the internal-ID→CID mapping so search() skips it on the next hit.
+        internal_id = self._cid_to_id.pop(cid)
+        self._id_to_cid.pop(internal_id, None)
         self._metadata.pop(cid, None)
         self._vectors.pop(cid, None)
+        self._namespaces.pop(cid, None)
         return True
 
     def count(self) -> int:
-        return self._index.ntotal
+        # Return logical count (excludes tombstoned vectors) rather than
+        # FAISS ntotal, which includes physically-present but deleted slots.
+        return len(self._vectors)
 
     def save(self, path: str | None = None) -> None:
         import faiss
