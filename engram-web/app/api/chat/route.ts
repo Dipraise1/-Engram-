@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 const MINER_URL = process.env.MINER_API_URL || "http://98.97.76.65:8091";
 const XAI_API_KEY = process.env.XAI_API_KEY || "";
 
-// How many past memories to inject as context
-const MEMORY_TOP_K = 12;
+// Fetch more candidates than needed so we have enough after session filtering
+const MEMORY_FETCH_K = 40;
+// How many to inject into context after filtering to this user's session
+const MEMORY_USE_K = 12;
 
 export const runtime = "nodejs";
 
@@ -33,17 +35,21 @@ interface MemoryResult {
   text?: string;
 }
 
-async function queryEngram(queryText: string): Promise<MemoryResult[]> {
+async function queryEngram(queryText: string, sessionId: string): Promise<MemoryResult[]> {
   try {
     const res = await fetch(`${MINER_URL}/QuerySynapse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query_text: queryText, top_k: MEMORY_TOP_K }),
+      body: JSON.stringify({ query_text: queryText, top_k: MEMORY_FETCH_K }),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return data.results ?? [];
+    const all: MemoryResult[] = data.results ?? [];
+    // Strict session isolation — only return memories belonging to this user
+    return all
+      .filter((m) => m.metadata?.session === sessionId)
+      .slice(0, MEMORY_USE_K);
   } catch {
     return [];
   }
@@ -67,8 +73,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
 
-  // ── 1. Retrieve relevant memories from Engram ────────────────────────────────
-  const memories = await queryEngram(userMessage);
+  // ── 1. Retrieve relevant memories from Engram (session-scoped) ──────────────
+  const memories = await queryEngram(userMessage, sessionId);
 
   // ── 2. Store the user's message in Engram ────────────────────────────────────
   const userCid = await ingestToEngram(userMessage, {
