@@ -28,6 +28,10 @@ interface SubnetStats {
   avg_score: number | null;
   queries_today: number | null;
   uptime_pct: number | null;
+  p50_latency_ms: number | null;
+  proof_rate: number | null;
+  hotkey: string | null;
+  uid: number | null;
   status: string;
 }
 
@@ -419,8 +423,8 @@ export default function Dashboard() {
             },
             {
               label: "Network uptime",
-              value: fmt(stats?.uptime_pct ?? null, n => `${n}%`),
-              sub: "30-day average",
+              value: fmt(stats?.uptime_pct ?? null, n => `${(n * 100).toFixed(1)}%`),
+              sub: "this process, last 24h",
               accent: false,
             },
           ].map(({ label, value, sub, accent }) => (
@@ -433,8 +437,8 @@ export default function Dashboard() {
         {/* Secondary stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
-            { label: "Proof success", value: "—", sub: "last 24h challenges" },
-            { label: "P50 latency", value: "—", sub: "across all miners" },
+            { label: "Proof success", value: fmt(stats?.proof_rate ?? null, n => `${(n * 100).toFixed(0)}%`), sub: "last 24h challenges" },
+            { label: "P50 latency", value: fmt(stats?.p50_latency_ms ?? null, n => `${n.toFixed(0)}ms`), sub: "query latency" },
             { label: "Queries today", value: fmt(stats?.queries_today ?? null, n => n.toLocaleString()), sub: "semantic searches" },
             { label: "Current block", value: fmt(stats?.block ?? null, n => `#${n.toLocaleString()}`), sub: "~12s per block" },
           ].map(({ label, value, sub }) => (

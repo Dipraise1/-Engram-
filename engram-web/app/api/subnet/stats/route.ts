@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const MINER_URL = process.env.MINER_API_URL || "http://98.97.76.65:8091";
+const MINER_URL = process.env.MINER_API_URL || "http://localhost:8091";
 const NETUID = process.env.NETUID || "450";
 
 export const revalidate = 0;
@@ -21,10 +21,14 @@ export async function GET() {
       vectors: stats.vectors ?? 0,
       miners: stats.peers ?? 0,
       validators: 1,
-      block: null,
-      avg_score: null,
-      queries_today: null,
-      uptime_pct: null,
+      block: stats.block ?? null,
+      avg_score: stats.avg_score ?? null,
+      queries_today: stats.queries_today ?? 0,
+      uptime_pct: stats.uptime_pct ?? null,
+      p50_latency_ms: stats.p50_latency_ms ?? null,
+      proof_rate: stats.proof_rate ?? null,
+      hotkey: stats.hotkey ?? null,
+      uid: stats.uid ?? null,
       status: stats.status ?? "unknown",
     });
   } catch {
@@ -37,7 +41,11 @@ export async function GET() {
       avg_score: null,
       queries_today: null,
       uptime_pct: null,
+      p50_latency_ms: null,
+      proof_rate: null,
+      hotkey: null,
+      uid: null,
       status: "unreachable",
-    }, { status: 200 }); // 200 so dashboard renders the empty state
+    }, { status: 200 });
   }
 }

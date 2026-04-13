@@ -110,14 +110,15 @@ class ChatStore:
             )
         """)
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_user ON chats(user_id, ts)")
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_conv ON chats(conv_id, ts)")
         self._conn.commit()
-        # Migrate: add conv_id column to existing chats if missing
+        # Migrate: add conv_id column to existing chats if missing (must run BEFORE the index)
         try:
             self._conn.execute("ALTER TABLE chats ADD COLUMN conv_id TEXT")
             self._conn.commit()
         except Exception:
             pass  # column already exists
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_conv ON chats(conv_id, ts)")
+        self._conn.commit()
 
     # ── Conversations ─────────────────────────────────────────────────────────
 
@@ -305,6 +306,14 @@ async def run() -> None:
         logger.warning("Hotkey not registered — run:")
         logger.warning(f"  btcli subnet register --netuid {netuid} --wallet.name {wallet_name}")
 
+    # ── Runtime stat counters ─────────────────────────────────────────────────
+    _queries_today      = 0
+    _query_day_start    = int(time.time() // 86400)   # day bucket
+    _latency_window: list[float] = []                 # rolling last-100 query latencies (ms)
+    _challenge_total    = 0
+    _challenge_ok       = 0
+    _miner_start_ts     = time.time()
+
     # ── HTTP handlers ─────────────────────────────────────────────────────────
 
     def _rate_limit_key(req: web.Request, hotkey: str | None) -> str:
@@ -374,6 +383,7 @@ async def run() -> None:
             return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
     async def handle_query(req: web.Request) -> web.Response:
+        nonlocal _queries_today, _query_day_start, _latency_window
         import time as _time
         t0 = _time.perf_counter()
         try:
@@ -407,6 +417,15 @@ async def run() -> None:
             METRICS.query_total.labels(status="error" if result.error else "ok").inc()
             if caller_hotkey and not result.error:
                 wallet_tracker.record_query(caller_hotkey)
+            # ── Rolling stat tracking ────────────────────────────────────────
+            today_bucket = int(_time.time() // 86400)
+            if today_bucket != _query_day_start:
+                _queries_today = 0
+                _query_day_start = today_bucket
+            _queries_today += 1
+            _latency_window.append(elapsed_ms)
+            if len(_latency_window) > 100:
+                _latency_window.pop(0)
             return web.json_response({
                 "results"   : result.results or [],
                 "latency_ms": result.latency_ms,
@@ -418,6 +437,7 @@ async def run() -> None:
             return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
     async def handle_challenge(req: web.Request) -> web.Response:
+        nonlocal _challenge_total, _challenge_ok
         try:
             body = await req.json()
 
@@ -447,9 +467,12 @@ async def run() -> None:
                 return web.json_response({"error": f"Nothing stored under that CID ({cid[:20]}…). This miner may not hold a replica of it."}, status=404)
 
             embedding_hash, proof = _proof_response(nonce_hex, record.embedding.tolist())
+            _challenge_total += 1
+            _challenge_ok += 1
             return web.json_response({"embedding_hash": embedding_hash, "proof": proof})
 
         except Exception as exc:
+            _challenge_total += 1   # count the failure too
             logger.error(f"Challenge error: {exc}")
             return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
@@ -597,12 +620,40 @@ async def run() -> None:
         return web.json_response({"status": "ok"})
 
     async def handle_stats(req: web.Request) -> web.Response:
-        """Public stats endpoint — basic counters for the dashboard."""
+        """Public stats endpoint — rich counters for the dashboard."""
+        import statistics as _stats
+        p50_latency = (
+            round(_stats.median(_latency_window), 1) if _latency_window else None
+        )
+        proof_rate = (
+            round(_challenge_ok / _challenge_total, 4) if _challenge_total > 0 else None
+        )
+        uptime_pct = round(
+            min(1.0, (time.time() - _miner_start_ts) / 86400), 4
+        )  # fraction of last 24h this process has been up
+        # Best-effort block height — non-blocking
+        try:
+            block = subtensor.get_current_block()
+        except Exception:
+            block = None
+        # Best-effort avg score from metagraph weights
+        try:
+            scores = metagraph.trust.tolist()
+            avg_score = round(float(sum(scores) / len(scores)), 4) if scores else None
+        except Exception:
+            avg_score = None
         return web.json_response({
             "status": "ok",
             "vectors": store.count(),
             "peers": router.peer_count(),
             "uid": our_uid,
+            "queries_today": _queries_today,
+            "p50_latency_ms": p50_latency,
+            "proof_rate": proof_rate,
+            "uptime_pct": uptime_pct,
+            "block": block,
+            "avg_score": avg_score,
+            "hotkey": wallet.hotkey.ss58_address,
         })
 
     async def handle_metrics(req: web.Request) -> web.Response:
