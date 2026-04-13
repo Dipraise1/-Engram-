@@ -33,7 +33,7 @@ jobs:
           pip install dist/engram_core-*.whl
 
       - name: Install Python dependencies
-        run: pip install ".[dev]"
+        run: pip install ".[dev]" faiss-cpu
 
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short --cov=engram --cov-report=term-missing
