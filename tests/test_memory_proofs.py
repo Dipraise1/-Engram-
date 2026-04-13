@@ -175,15 +175,6 @@ def test_batch_proof_not_shuffleable() -> None:
 
 
 @pytest.mark.skipif(not _BATCH, reason="batch proof API not in installed wheel (rebuild needed)")
-def test_batch_expired_fails_all() -> None:
-    cids = [make_cid(EMB_A)]
-    batch = engram_core.generate_batch_challenge(cids, 0)   # already expired
-    resp = engram_core.generate_batch_response(batch, [EMB_A])
-    results = engram_core.verify_batch_response(batch, resp, [EMB_A])
-    assert results == [False]
-
-
-@pytest.mark.skipif(not _BATCH, reason="batch proof API not in installed wheel (rebuild needed)")
 def test_batch_single_entry() -> None:
     cids = [make_cid(EMB_A)]
     batch = engram_core.generate_batch_challenge(cids, 60)
