@@ -636,10 +636,10 @@ async def run() -> None:
             block = subtensor.get_current_block()
         except Exception:
             block = None
-        # Best-effort avg score from metagraph weights
+        # Best-effort avg score from metagraph incentive (what miners actually earn)
         try:
-            scores = metagraph.trust.tolist()
-            avg_score = round(float(sum(scores) / len(scores)), 4) if scores else None
+            scores = [float(x) for x in metagraph.incentive.tolist() if float(x) > 0]
+            avg_score = round(sum(scores) / len(scores), 4) if scores else None
         except Exception:
             avg_score = None
         return web.json_response({
