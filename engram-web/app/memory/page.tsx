@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ArrowLeft,
   Brain,
@@ -16,7 +18,11 @@ import {
   Zap,
   Share2,
   Check,
-  Copy,
+  Plus,
+  Trash2,
+  MessageSquare,
+  Menu,
+  X,
   ExternalLink,
 } from "lucide-react";
 
@@ -38,6 +44,13 @@ interface Message {
   storedCid?: string | null;
   userCid?: string | null;
   isStreaming?: boolean;
+}
+
+interface Conversation {
+  conv_id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
 }
 
 // ── Date grouping helpers ──────────────────────────────────────────────────────
@@ -113,9 +126,10 @@ function localSave(uid: string, messages: Message[]) {
 
 // ── Server sync ───────────────────────────────────────────────────────────────
 
-async function serverLoad(uid: string): Promise<Message[]> {
+async function serverLoad(uid: string, convId?: string): Promise<Message[]> {
   try {
-    const res = await fetch(`/api/history?uid=${encodeURIComponent(uid)}`);
+    const qs = convId ? `&conv_id=${encodeURIComponent(convId)}` : "";
+    const res = await fetch(`/api/history?uid=${encodeURIComponent(uid)}${qs}`);
     if (!res.ok) return [];
     const data = await res.json();
     return (data.messages ?? []).map(
@@ -131,17 +145,73 @@ async function serverLoad(uid: string): Promise<Message[]> {
   }
 }
 
-async function serverSave(uid: string, messages: Message[]) {
+async function serverSave(uid: string, messages: Message[], convId?: string) {
   try {
     await fetch("/api/history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         uid,
+        conv_id: convId,
         messages: messages.map((m) => ({ role: m.role, content: m.content, ts: m.ts })),
       }),
     });
   } catch { /* best-effort */ }
+}
+
+// ── Conversation API helpers ───────────────────────────────────────────────────
+
+async function loadConversations(uid: string): Promise<Conversation[]> {
+  try {
+    const res = await fetch(`/api/conversations?uid=${encodeURIComponent(uid)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.conversations ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function createConversation(uid: string, convId: string, title = "New Chat"): Promise<void> {
+  try {
+    await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid, conv_id: convId, title }),
+    });
+  } catch { /* best-effort */ }
+}
+
+async function deleteConversation(uid: string, convId: string): Promise<void> {
+  try {
+    await fetch(`/api/conversations?uid=${encodeURIComponent(uid)}&conv_id=${encodeURIComponent(convId)}`, {
+      method: "DELETE",
+    });
+  } catch { /* best-effort */ }
+}
+
+function newConvId(): string {
+  return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
+function localLoadConv(uid: string, convId: string): Message[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(`engram_msgs_${uid}_${convId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function localSaveConv(uid: string, convId: string, messages: Message[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`engram_msgs_${uid}_${convId}`, JSON.stringify(messages.slice(-200)));
+  } catch { /* quota */ }
+}
+
+function localDeleteConv(uid: string, convId: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(`engram_msgs_${uid}_${convId}`);
 }
 
 // ── Memory pill ────────────────────────────────────────────────────────────────
@@ -201,13 +271,45 @@ function MessageBubble({ msg, readOnly }: { msg: Message; readOnly: boolean }) {
 
       {/* Bubble */}
       <div
-        className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+        className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed break-words ${
           isUser
-            ? "bg-fuchsia-600/80 text-white rounded-br-sm"
+            ? "bg-fuchsia-600/80 text-white rounded-br-sm whitespace-pre-wrap"
             : "bg-white/8 border border-white/10 text-slate-100 rounded-bl-sm"
         }`}
       >
-        {msg.content}
+        {isUser ? (
+          msg.content
+        ) : (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+              code: ({ inline, children, ...props }: React.HTMLAttributes<HTMLElement> & { inline?: boolean }) =>
+                inline ? (
+                  <code className="bg-white/10 rounded px-1 py-0.5 font-mono text-xs" {...props}>{children}</code>
+                ) : (
+                  <pre className="bg-black/30 rounded-lg p-3 overflow-x-auto my-2">
+                    <code className="font-mono text-xs text-slate-200" {...props}>{children}</code>
+                  </pre>
+                ),
+              ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2">{children}</ol>,
+              li: ({ children }) => <li className="text-slate-200">{children}</li>,
+              strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer" className="text-fuchsia-400 hover:underline">{children}</a>
+              ),
+              h1: ({ children }) => <h1 className="text-base font-bold text-white mb-1 mt-2">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-sm font-bold text-white mb-1 mt-2">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-sm font-semibold text-white/90 mb-1 mt-2">{children}</h3>,
+              blockquote: ({ children }) => (
+                <blockquote className="border-l-2 border-fuchsia-500/50 pl-3 italic text-slate-300 my-2">{children}</blockquote>
+              ),
+            }}
+          >
+            {msg.content}
+          </ReactMarkdown>
+        )}
         {msg.isStreaming && (
           <span className="inline-block w-1.5 h-4 bg-fuchsia-400 ml-1 animate-pulse rounded-sm" />
         )}
@@ -343,6 +445,83 @@ function ReadOnlyBanner() {
   );
 }
 
+// ── Conversation sidebar ───────────────────────────────────────────────────────
+
+function ConversationSidebar({
+  conversations,
+  activeConvId,
+  onSelect,
+  onNew,
+  onDelete,
+  onClose,
+}: {
+  conversations: Conversation[];
+  activeConvId: string;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onDelete: (id: string) => void;
+  onClose?: () => void;
+}) {
+  return (
+    <div className="flex flex-col h-full bg-[#07050a] border-r border-white/8 w-64 shrink-0">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-3 border-b border-white/8">
+        <div className="flex items-center gap-1.5 text-white/60 text-xs font-medium">
+          <Brain className="w-3.5 h-3.5 text-fuchsia-400" />
+          Conversations
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onNew}
+            title="New chat"
+            className="flex items-center gap-1 text-[11px] text-white/40 hover:text-white bg-white/5 hover:bg-fuchsia-600/20 border border-white/10 hover:border-fuchsia-500/30 px-2 py-1 rounded-lg transition-colors touch-manipulation"
+          >
+            <Plus className="w-3 h-3" />
+            New
+          </button>
+          {onClose && (
+            <button onClick={onClose} className="ml-1 text-white/30 hover:text-white/70 touch-manipulation">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {conversations.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 text-white/20 text-xs text-center px-4">
+            <MessageSquare className="w-6 h-6 mb-2 opacity-40" />
+            No conversations yet
+          </div>
+        )}
+        {conversations.map((conv) => {
+          const active = conv.conv_id === activeConvId;
+          return (
+            <div
+              key={conv.conv_id}
+              className={`group flex items-center gap-2 px-3 py-2.5 cursor-pointer transition-colors ${
+                active ? "bg-white/8 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
+              }`}
+              onClick={() => { onSelect(conv.conv_id); onClose?.(); }}
+            >
+              <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${active ? "text-fuchsia-400" : "opacity-50"}`} />
+              <span className="flex-1 text-[13px] truncate leading-snug">{conv.title}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(conv.conv_id); }}
+                className="shrink-0 opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-all touch-manipulation"
+                title="Delete"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Inner page (needs useSearchParams, wrapped in Suspense) ───────────────────
 
 function MemoryPageInner() {
@@ -352,6 +531,9 @@ function MemoryPageInner() {
 
   const sessionId = useRef<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConvId, setActiveConvId] = useState<string>("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -361,6 +543,21 @@ function MemoryPageInner() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<Message[]>([]);
+  const activeConvIdRef = useRef<string>("");
+
+  // Load messages for a given conversation
+  const loadConv = useCallback(async (uid: string, convId: string) => {
+    setInitialized(false);
+    setMessages([]);
+    const local = localLoadConv(uid, convId);
+    if (local.length > 0) setMessages(local);
+    const serverMsgs = await serverLoad(uid, convId);
+    if (serverMsgs.length > 0) {
+      setMessages(serverMsgs);
+      localSaveConv(uid, convId, serverMsgs);
+    }
+    setInitialized(true);
+  }, []);
 
   // Initialize: load from server (source of truth), fall back to localStorage
   useEffect(() => {
@@ -376,28 +573,88 @@ function MemoryPageInner() {
     sessionId.current = getSessionId();
     const uid = sessionId.current;
 
-    // Show local cache immediately (instant), then hydrate from server
-    const local = localLoad(uid);
-    if (local.length > 0) setMessages(local);
-
-    serverLoad(uid).then((serverMsgs) => {
-      if (serverMsgs.length > 0) {
-        // Server has more messages (e.g. different device) — prefer server
-        setMessages(serverMsgs);
-        localSave(uid, serverMsgs);
+    // Load conversations, then load the most recent one
+    loadConversations(uid).then(async (convs) => {
+      if (convs.length > 0) {
+        setConversations(convs);
+        const firstId = convs[0].conv_id;
+        activeConvIdRef.current = firstId;
+        setActiveConvId(firstId);
+        await loadConv(uid, firstId);
+      } else {
+        // No conversations yet — create the first one
+        const cid = newConvId();
+        activeConvIdRef.current = cid;
+        setActiveConvId(cid);
+        // Also try to migrate old messages (pre-multi-conv)
+        const oldMsgs = localLoad(uid);
+        if (oldMsgs.length > 0) {
+          // Migrate: wrap old messages into first conversation
+          const title = oldMsgs.find((m) => m.role === "user")?.content?.slice(0, 50) ?? "Chat";
+          await createConversation(uid, cid, title + (title.length >= 50 ? "…" : ""));
+          setMessages(oldMsgs);
+          localSaveConv(uid, cid, oldMsgs);
+          await serverSave(uid, oldMsgs, cid);
+        }
+        setConversations([{ conv_id: cid, title: "New Chat", created_at: Date.now(), updated_at: Date.now() }]);
+        setInitialized(true);
       }
-      setInitialized(true);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnly, viewParam]);
 
   // Keep both caches in sync whenever messages change
   useEffect(() => {
     messagesRef.current = messages;
-    if (!readOnly && initialized && sessionId.current) {
-      localSave(sessionId.current, messages);
-      serverSave(sessionId.current, messages);
+    const convId = activeConvIdRef.current;
+    if (!readOnly && initialized && sessionId.current && convId) {
+      localSaveConv(sessionId.current, convId, messages);
+      serverSave(sessionId.current, messages, convId);
     }
   }, [messages, readOnly, initialized]);
+
+  // Handle selecting a different conversation
+  const handleSelectConv = useCallback(async (convId: string) => {
+    if (convId === activeConvIdRef.current) return;
+    activeConvIdRef.current = convId;
+    setActiveConvId(convId);
+    setSidebarOpen(false);
+    await loadConv(sessionId.current, convId);
+  }, [loadConv]);
+
+  // Handle new conversation
+  const handleNewConv = useCallback(async () => {
+    const uid = sessionId.current;
+    const cid = newConvId();
+    activeConvIdRef.current = cid;
+    setActiveConvId(cid);
+    setMessages([]);
+    setInitialized(true);
+    setSidebarOpen(false);
+    await createConversation(uid, cid, "New Chat");
+    setConversations((prev) => [
+      { conv_id: cid, title: "New Chat", created_at: Date.now(), updated_at: Date.now() },
+      ...prev,
+    ]);
+  }, []);
+
+  // Handle delete conversation
+  const handleDeleteConv = useCallback(async (convId: string) => {
+    const uid = sessionId.current;
+    localDeleteConv(uid, convId);
+    await deleteConversation(uid, convId);
+    setConversations((prev) => {
+      const next = prev.filter((c) => c.conv_id !== convId);
+      if (convId === activeConvIdRef.current) {
+        if (next.length > 0) {
+          handleSelectConv(next[0].conv_id);
+        } else {
+          handleNewConv();
+        }
+      }
+      return next;
+    });
+  }, [handleSelectConv, handleNewConv]);
 
   // Auto-scroll
   useEffect(() => {
@@ -418,6 +675,21 @@ function MemoryPageInner() {
 
     setInput("");
     setError(null);
+
+    const uid = sessionId.current;
+    const convId = activeConvIdRef.current;
+
+    // Auto-create conversation record on first message
+    const isFirst = messagesRef.current.length === 0;
+    if (isFirst && convId) {
+      const title = text.slice(0, 50) + (text.length > 50 ? "…" : "");
+      await createConversation(uid, convId, title);
+      setConversations((prev) => {
+        const existing = prev.find((c) => c.conv_id === convId);
+        if (existing) return prev.map((c) => c.conv_id === convId ? { ...c, title } : c);
+        return [{ conv_id: convId, title, created_at: Date.now(), updated_at: Date.now() }, ...prev];
+      });
+    }
 
     const now = Date.now();
     const userMsg: Message = {
@@ -519,15 +791,57 @@ function MemoryPageInner() {
 
   return (
     <div
-      className="flex flex-col bg-[#080608] text-slate-200"
+      className="flex bg-[#080608] text-slate-200 overflow-hidden"
       style={{ height: "100dvh" }}
     >
+      {/* ── Desktop sidebar ──────────────────────────────────────────────────── */}
+      {!readOnly && (
+        <div className="hidden md:flex">
+          <ConversationSidebar
+            conversations={conversations}
+            activeConvId={activeConvId}
+            onSelect={handleSelectConv}
+            onNew={handleNewConv}
+            onDelete={handleDeleteConv}
+          />
+        </div>
+      )}
+
+      {/* ── Mobile sidebar drawer ────────────────────────────────────────────── */}
+      {!readOnly && sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
+          <div className="relative z-10">
+            <ConversationSidebar
+              conversations={conversations}
+              activeConvId={activeConvId}
+              onSelect={handleSelectConv}
+              onNew={handleNewConv}
+              onDelete={handleDeleteConv}
+              onClose={() => setSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Main chat area ───────────────────────────────────────────────────── */}
+      <div className="flex flex-col flex-1 min-w-0">
+
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-white/10 px-4 py-3 safe-area-top">
         <div className="max-w-3xl mx-auto flex items-center gap-2">
+          {!readOnly && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="md:hidden flex items-center text-white/40 hover:text-white transition-colors p-1 -ml-1 touch-manipulation"
+              aria-label="Open conversations"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+          )}
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-white/40 hover:text-white transition-colors p-1 -ml-1 touch-manipulation"
+            className="flex items-center gap-1.5 text-white/40 hover:text-white transition-colors p-1 touch-manipulation"
             aria-label="Home"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -537,7 +851,11 @@ function MemoryPageInner() {
 
           <div className="flex items-center gap-1.5 ml-1 sm:ml-0">
             <Brain className="w-4 h-4 text-fuchsia-400 shrink-0" />
-            <span className="font-medium text-white text-sm">Engram Memory</span>
+            <span className="font-medium text-white text-sm truncate max-w-[140px] sm:max-w-none">
+              {!readOnly && activeConvId
+                ? (conversations.find((c) => c.conv_id === activeConvId)?.title ?? "Engram Memory")
+                : "Engram Memory"}
+            </span>
           </div>
 
           <div className="ml-auto flex items-center gap-1">
@@ -695,6 +1013,8 @@ function MemoryPageInner() {
           </div>
         </div>
       )}
+
+      </div>{/* end main chat area */}
     </div>
   );
 }

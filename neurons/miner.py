@@ -77,17 +77,32 @@ class ChatStore:
     """
     Persists chat history per anonymous user ID in a local SQLite database.
     Thread-safe via check_same_thread=False + WAL mode.
+    Supports multiple named conversations per user via conv_id.
     """
 
-    MAX_MESSAGES = 200  # per user, keeps oldest messages pruned
+    MAX_MESSAGES = 200  # per conversation
 
     def __init__(self, db_path: str = "./data/chats.db") -> None:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
+        # conversations table — one row per named conversation
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                conv_id   TEXT NOT NULL,
+                user_id   TEXT NOT NULL,
+                title     TEXT NOT NULL DEFAULT 'New Chat',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (conv_id)
+            )
+        """)
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id, updated_at DESC)")
+        # chats table — messages keyed by user_id + optional conv_id
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS chats (
                 user_id   TEXT NOT NULL,
+                conv_id   TEXT,
                 ts        INTEGER NOT NULL,
                 role      TEXT NOT NULL,
                 content   TEXT NOT NULL,
@@ -95,16 +110,72 @@ class ChatStore:
             )
         """)
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_user ON chats(user_id, ts)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_conv ON chats(conv_id, ts)")
         self._conn.commit()
+        # Migrate: add conv_id column to existing chats if missing
+        try:
+            self._conn.execute("ALTER TABLE chats ADD COLUMN conv_id TEXT")
+            self._conn.commit()
+        except Exception:
+            pass  # column already exists
 
-    def save(self, user_id: str, messages: list[dict]) -> None:
-        """Replace all messages for a user (upsert-style)."""
+    # ── Conversations ─────────────────────────────────────────────────────────
+
+    def list_conversations(self, user_id: str) -> list[dict]:
+        """Return conversations for user, newest first."""
+        cur = self._conn.execute(
+            "SELECT conv_id, title, created_at, updated_at FROM conversations "
+            "WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50",
+            (user_id,),
+        )
+        return [
+            {"conv_id": r[0], "title": r[1], "created_at": r[2], "updated_at": r[3]}
+            for r in cur.fetchall()
+        ]
+
+    def create_conversation(self, user_id: str, conv_id: str, title: str = "New Chat") -> None:
+        now = int(time.time() * 1000)
         with self._conn:
-            self._conn.execute("DELETE FROM chats WHERE user_id = ?", (user_id,))
+            self._conn.execute(
+                "INSERT OR IGNORE INTO conversations(conv_id, user_id, title, created_at, updated_at) VALUES(?,?,?,?,?)",
+                (conv_id, user_id, title, now, now),
+            )
+
+    def rename_conversation(self, conv_id: str, user_id: str, title: str) -> None:
+        now = int(time.time() * 1000)
+        with self._conn:
+            self._conn.execute(
+                "UPDATE conversations SET title=?, updated_at=? WHERE conv_id=? AND user_id=?",
+                (title[:80], now, conv_id, user_id),
+            )
+
+    def delete_conversation(self, conv_id: str, user_id: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM conversations WHERE conv_id=? AND user_id=?", (conv_id, user_id)
+            )
+            self._conn.execute(
+                "DELETE FROM chats WHERE conv_id=? AND user_id=?", (conv_id, user_id)
+            )
+
+    # ── Messages ──────────────────────────────────────────────────────────────
+
+    def save(self, user_id: str, messages: list[dict], conv_id: str | None = None) -> None:
+        """Replace all messages for a user/conversation (upsert-style)."""
+        with self._conn:
+            if conv_id:
+                self._conn.execute(
+                    "DELETE FROM chats WHERE user_id = ? AND conv_id = ?", (user_id, conv_id)
+                )
+            else:
+                self._conn.execute(
+                    "DELETE FROM chats WHERE user_id = ? AND conv_id IS NULL", (user_id,)
+                )
             now = int(time.time() * 1000)
             rows = [
                 (
                     user_id,
+                    conv_id,
                     now + i,
                     m.get("role", "user"),
                     m.get("content", ""),
@@ -113,14 +184,40 @@ class ChatStore:
                 for i, m in enumerate(messages[-self.MAX_MESSAGES:])
             ]
             self._conn.executemany(
-                "INSERT INTO chats(user_id, ts, role, content, msg_ts) VALUES(?,?,?,?,?)", rows
+                "INSERT INTO chats(user_id, conv_id, ts, role, content, msg_ts) VALUES(?,?,?,?,?,?)", rows
             )
+            # bump conversation updated_at if conv_id given
+            if conv_id and messages:
+                ts = messages[-1].get("ts") or now
+                self._conn.execute(
+                    "UPDATE conversations SET updated_at=? WHERE conv_id=? AND user_id=?",
+                    (ts, conv_id, user_id),
+                )
+                # Auto-title: use first user message truncated if title is still default
+                cur = self._conn.execute(
+                    "SELECT title FROM conversations WHERE conv_id=? AND user_id=?", (conv_id, user_id)
+                )
+                row = cur.fetchone()
+                if row and row[0] in ("New Chat", ""):
+                    first_user = next((m["content"] for m in messages if m.get("role") == "user"), None)
+                    if first_user:
+                        auto_title = first_user[:50] + ("…" if len(first_user) > 50 else "")
+                        self._conn.execute(
+                            "UPDATE conversations SET title=? WHERE conv_id=? AND user_id=?",
+                            (auto_title, conv_id, user_id),
+                        )
 
-    def load(self, user_id: str) -> list[dict]:
-        cur = self._conn.execute(
-            "SELECT role, content, msg_ts FROM chats WHERE user_id = ? ORDER BY ts ASC",
-            (user_id,),
-        )
+    def load(self, user_id: str, conv_id: str | None = None) -> list[dict]:
+        if conv_id:
+            cur = self._conn.execute(
+                "SELECT role, content, msg_ts FROM chats WHERE user_id = ? AND conv_id = ? ORDER BY ts ASC",
+                (user_id, conv_id),
+            )
+        else:
+            cur = self._conn.execute(
+                "SELECT role, content, msg_ts FROM chats WHERE user_id = ? AND conv_id IS NULL ORDER BY ts ASC",
+                (user_id,),
+            )
         return [{"role": row[0], "content": row[1], "ts": row[2]} for row in cur.fetchall()]
 
 
@@ -156,6 +253,18 @@ async def run() -> None:
     rate_limiter       = RateLimiter()
     wallet_tracker     = WalletTracker()
     chat_store         = ChatStore(os.getenv("CHAT_DB_PATH", "./data/chats.db"))
+
+    # ── FAISS persistence: load existing index from disk ─────────────────────
+    index_path   = os.getenv("FAISS_INDEX_PATH", "./data/miner.index")
+    _ingest_count = 0
+    SAVE_EVERY    = int(os.getenv("FAISS_SAVE_EVERY", "25"))  # auto-save every N ingests
+
+    if os.path.exists(index_path + ".meta.json"):
+        try:
+            store.load(index_path)
+            logger.info(f"FAISS: loaded {store.count()} vectors from {index_path}")
+        except Exception as exc:
+            logger.warning(f"FAISS load failed ({exc}) — starting with empty index")
 
     logger.info(f"Vector store: {backend} | {store.count()} vectors loaded")
 
@@ -206,6 +315,7 @@ async def run() -> None:
         return peername[0] if peername else "unknown"
 
     async def handle_ingest(req: web.Request) -> web.Response:
+        nonlocal _ingest_count
         import time as _time
         t0 = _time.perf_counter()
         try:
@@ -245,6 +355,13 @@ async def run() -> None:
                 METRICS.ingest_total.labels(status="ok").inc()
                 METRICS.vectors_stored.set(store.count())
                 replication_mgr.register(result.cid)
+                _ingest_count += 1
+                if _ingest_count % SAVE_EVERY == 0:
+                    try:
+                        store.save(index_path)
+                        logger.debug(f"FAISS auto-saved ({store.count()} vectors)")
+                    except Exception as exc:
+                        logger.warning(f"FAISS auto-save failed: {exc}")
                 if caller_hotkey:
                     wallet_tracker.record_ingest(caller_hotkey, result.cid)
                 if not router.should_store(result.cid):
@@ -402,11 +519,12 @@ async def run() -> None:
         return web.json_response(wallet_tracker.summary())
 
     async def handle_chat_history_get(req: web.Request) -> web.Response:
-        """GET /chat-history/{user_id} — load a user's chat history."""
+        """GET /chat-history/{user_id}?conv_id=X — load a user's chat history."""
         user_id = req.match_info.get("user_id", "").strip()
+        conv_id = req.rel_url.query.get("conv_id", "").strip() or None
         if not user_id or len(user_id) > 128:
             return web.json_response({"error": "Invalid user_id"}, status=400)
-        messages = chat_store.load(user_id)
+        messages = chat_store.load(user_id, conv_id)
         return web.json_response({"messages": messages})
 
     async def handle_chat_history_post(req: web.Request) -> web.Response:
@@ -414,16 +532,64 @@ async def run() -> None:
         try:
             body = await req.json()
             user_id  = (body.get("user_id") or "").strip()
+            conv_id  = (body.get("conv_id") or "").strip() or None
             messages = body.get("messages") or []
             if not user_id or len(user_id) > 128:
                 return web.json_response({"error": "Invalid user_id"}, status=400)
             if not isinstance(messages, list):
                 return web.json_response({"error": "messages must be a list"}, status=400)
-            chat_store.save(user_id, messages)
+            chat_store.save(user_id, messages, conv_id)
             return web.json_response({"ok": True, "saved": len(messages)})
         except Exception as exc:
             logger.error(f"Chat history save error: {exc}")
             return web.json_response({"error": "Internal error"}, status=500)
+
+    async def handle_conversations_get(req: web.Request) -> web.Response:
+        """GET /conversations/{user_id} — list all conversations for a user."""
+        user_id = req.match_info.get("user_id", "").strip()
+        if not user_id or len(user_id) > 128:
+            return web.json_response({"error": "Invalid user_id"}, status=400)
+        convs = chat_store.list_conversations(user_id)
+        return web.json_response({"conversations": convs})
+
+    async def handle_conversations_post(req: web.Request) -> web.Response:
+        """POST /conversations — create a new conversation."""
+        try:
+            body    = await req.json()
+            user_id = (body.get("user_id") or "").strip()
+            conv_id = (body.get("conv_id") or "").strip()
+            title   = (body.get("title") or "New Chat").strip()[:80]
+            if not user_id or not conv_id or len(user_id) > 128 or len(conv_id) > 128:
+                return web.json_response({"error": "Invalid user_id or conv_id"}, status=400)
+            chat_store.create_conversation(user_id, conv_id, title)
+            return web.json_response({"ok": True})
+        except Exception as exc:
+            logger.error(f"Conversation create error: {exc}")
+            return web.json_response({"error": "Internal error"}, status=500)
+
+    async def handle_conversations_patch(req: web.Request) -> web.Response:
+        """PATCH /conversations/{conv_id} — rename a conversation."""
+        try:
+            conv_id = req.match_info.get("conv_id", "").strip()
+            body    = await req.json()
+            user_id = (body.get("user_id") or "").strip()
+            title   = (body.get("title") or "").strip()[:80]
+            if not user_id or not conv_id or not title:
+                return web.json_response({"error": "Invalid params"}, status=400)
+            chat_store.rename_conversation(conv_id, user_id, title)
+            return web.json_response({"ok": True})
+        except Exception as exc:
+            logger.error(f"Conversation rename error: {exc}")
+            return web.json_response({"error": "Internal error"}, status=500)
+
+    async def handle_conversations_delete(req: web.Request) -> web.Response:
+        """DELETE /conversations/{conv_id}?user_id=X — delete a conversation."""
+        conv_id = req.match_info.get("conv_id", "").strip()
+        user_id = req.rel_url.query.get("user_id", "").strip()
+        if not user_id or not conv_id:
+            return web.json_response({"error": "Invalid params"}, status=400)
+        chat_store.delete_conversation(conv_id, user_id)
+        return web.json_response({"ok": True})
 
     async def handle_health(req: web.Request) -> web.Response:
         # Keep health minimal — just a liveness signal, no internal data.
@@ -468,6 +634,10 @@ async def run() -> None:
     app.router.add_post("/namespace",               handle_namespace)
     app.router.add_get("/chat-history/{user_id}",   handle_chat_history_get)
     app.router.add_post("/chat-history",            handle_chat_history_post)
+    app.router.add_get("/conversations/{user_id}",  handle_conversations_get)
+    app.router.add_post("/conversations",           handle_conversations_post)
+    app.router.add_patch("/conversations/{conv_id}", handle_conversations_patch)
+    app.router.add_delete("/conversations/{conv_id}", handle_conversations_delete)
     app.router.add_get("/health",                   handle_health)
     app.router.add_get("/stats",                    handle_stats)
     app.router.add_get("/metrics",                  handle_metrics)
@@ -502,6 +672,11 @@ async def run() -> None:
     except KeyboardInterrupt:
         logger.info("Miner shutting down.")
     finally:
+        try:
+            store.save(index_path)
+            logger.info(f"FAISS: saved {store.count()} vectors on shutdown → {index_path}")
+        except Exception as exc:
+            logger.warning(f"FAISS shutdown save failed: {exc}")
         await runner.cleanup()
 
 

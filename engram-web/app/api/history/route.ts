@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
 
-const MINER_URL = process.env.MINER_API_URL || "http://98.97.76.65:8091";
+const MINER_URL = process.env.MINER_API_URL || "http://localhost:8091";
 
 // ── GET /api/history?uid=<userId> ─────────────────────────────────────────────
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const uid = (searchParams.get("uid") ?? "").trim();
+  const uid     = (searchParams.get("uid") ?? "").trim();
+  const conv_id = (searchParams.get("conv_id") ?? "").trim();
 
   if (!uid || uid.length > 128) {
     return NextResponse.json({ messages: [] });
   }
 
+  const qs = conv_id ? `?conv_id=${encodeURIComponent(conv_id)}` : "";
   try {
-    const res = await fetch(`${MINER_URL}/chat-history/${encodeURIComponent(uid)}`, {
+    const res = await fetch(`${MINER_URL}/chat-history/${encodeURIComponent(uid)}${qs}`, {
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return NextResponse.json({ messages: [] });
@@ -36,11 +38,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid uid" }, { status: 400 });
   }
 
+  const conv_id = (body.conv_id ?? "").trim() || undefined;
   try {
     const res = await fetch(`${MINER_URL}/chat-history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: uid, messages }),
+      body: JSON.stringify({ user_id: uid, conv_id, messages }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new Error("miner error");

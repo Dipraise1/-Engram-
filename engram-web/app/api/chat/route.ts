@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const MINER_URL = process.env.MINER_API_URL || "http://98.97.76.65:8091";
+const MINER_URL = process.env.MINER_API_URL || "http://localhost:8091";
 const XAI_API_KEY = process.env.XAI_API_KEY || "";
 
 // Fetch extra candidates — filter to this session after
@@ -10,6 +10,26 @@ const MEMORY_USE_K = 12;
 const RECENT_HISTORY_N = 20;
 
 export const runtime = "nodejs";
+
+// ── Rate limiting ──────────────────────────────────────────────────────────────
+// Simple in-memory rate limiter: max 30 requests per session per hour
+
+const RATE_LIMIT = 30;
+const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(sessionId: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(sessionId);
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    rateLimitMap.set(sessionId, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT) return false;
+  entry.count++;
+  return true;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -96,6 +116,13 @@ export async function POST(req: Request) {
 
   if (!userMessage) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
+  }
+
+  if (!checkRateLimit(sessionId)) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Max 30 messages per hour per session." },
+      { status: 429 }
+    );
   }
 
   // Derive the base URL from the incoming request (works on Vercel + local)
