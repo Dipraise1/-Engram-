@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 const MINER_URL = process.env.MINER_API_URL || "http://98.97.76.65:8091";
 const XAI_API_KEY = process.env.XAI_API_KEY || "";
 
-// Fetch more candidates than needed so we have enough after session filtering
+// Fetch extra candidates — filter to this session after
 const MEMORY_FETCH_K = 40;
-// How many to inject into context after filtering to this user's session
 const MEMORY_USE_K = 12;
+// How many recent messages to include as direct conversation context
+const RECENT_HISTORY_N = 20;
 
 export const runtime = "nodejs";
 
@@ -46,10 +47,34 @@ async function queryEngram(queryText: string, sessionId: string): Promise<Memory
     if (!res.ok) return [];
     const data = await res.json();
     const all: MemoryResult[] = data.results ?? [];
-    // Strict session isolation — only return memories belonging to this user
+    // Strict session isolation — discard any memory not belonging to this user
     return all
-      .filter((m) => m.metadata?.session === sessionId)
+      .filter((m) => m.metadata?.session === sessionId && m.metadata?.text)
       .slice(0, MEMORY_USE_K);
+  } catch {
+    return [];
+  }
+}
+
+// Load recent chat history from our SQLite store (ordered, full text)
+async function loadRecentHistory(
+  sessionId: string,
+  baseUrl: string
+): Promise<{ role: "user" | "assistant"; content: string }[]> {
+  try {
+    const res = await fetch(
+      `${baseUrl}/api/history?uid=${encodeURIComponent(sessionId)}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const msgs: { role: string; content: string }[] = data.messages ?? [];
+    return msgs
+      .slice(-(RECENT_HISTORY_N))
+      .map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      }));
   } catch {
     return [];
   }
@@ -73,38 +98,60 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
 
-  // ── 1. Retrieve relevant memories from Engram (session-scoped) ──────────────
-  const memories = await queryEngram(userMessage, sessionId);
+  // Derive the base URL from the incoming request (works on Vercel + local)
+  const reqUrl = new URL(req.url);
+  const baseUrl = `${reqUrl.protocol}//${reqUrl.host}`;
 
-  // ── 2. Store the user's message in Engram ────────────────────────────────────
-  const userCid = await ingestToEngram(userMessage, {
-    role: "user",
-    session: sessionId,
-    text: userMessage.slice(0, 500),  // stored so recall can read the actual content
-    ts: String(Date.now()),
-  });
+  // ── Run memory recall + history load + user message storage in parallel ──────
+  const [memories, recentHistory, userCid] = await Promise.all([
+    queryEngram(userMessage, sessionId),
+    loadRecentHistory(sessionId, baseUrl),
+    ingestToEngram(userMessage, {
+      role: "user",
+      session: sessionId,
+      text: userMessage.slice(0, 500),
+      ts: String(Date.now()),
+    }),
+  ]);
 
-  // ── 3. Build system prompt with memory context ───────────────────────────────
-  const memoryLines = memories
-    .filter((m) => m.metadata?.role && m.metadata?.text)  // only include if we have actual text
+  // ── Build system prompt ───────────────────────────────────────────────────────
+  // Semantic memories (things from older sessions, distant parts of conversation)
+  const semanticLines = memories
+    .filter((m) => m.metadata?.text)
     .map((m) => {
       const role = m.metadata.role === "assistant" ? "Assistant" : "User";
       return `[${role}]: ${m.metadata.text}`;
     });
 
-  const memoryContext =
-    memoryLines.length > 0
-      ? `\n\nPAST CONVERSATION MEMORIES (retrieved from Engram network — these are real things the user said or you replied):\n${memoryLines.join("\n")}`
+  const semanticContext =
+    semanticLines.length > 0
+      ? `\nSEMANTIC MEMORIES (most relevant past excerpts from Engram network):\n${semanticLines.join("\n")}`
       : "";
 
-  const systemPrompt = `You are Engram AI — an AI assistant with permanent, decentralized memory powered by the Engram network on Bittensor. Every conversation turn is stored as a vector embedding across a decentralized network of miners, cryptographically proven to exist.
+  const systemPrompt = `You are Engram AI — a highly intelligent AI assistant with permanent, decentralized memory powered by the Engram network on Bittensor. Every conversation turn is stored as a vector embedding across a decentralized network of miners with cryptographic proof.
 
-Your personality: thoughtful, direct, and honest. You remember everything the user has ever told you across all sessions.
-${memoryContext}
+You remember everything the user has ever told you — their name, age, preferences, past questions, projects, and anything else they've shared. Recall this naturally in conversation.
 
-IMPORTANT: The memories above are real excerpts from past conversations with this user. Treat them as factual. If the user asks what you remember about them (their age, what they said, etc.), refer to the memories above and answer accurately. Never claim you don't know something that appears in the memories.`;
+Personality: sharp, warm, direct, and technically curious. Give thorough answers. Be honest about uncertainty. Never be evasive.
+${semanticContext}
 
-  // ── 4. Call xAI Grok with streaming (OpenAI-compatible API) ──────────────────
+INSTRUCTIONS:
+- The semantic memories above are real excerpts from past sessions — treat them as absolute facts
+- The conversation messages below are the current session in order — they are the ground truth for what was just said
+- If the user asks what you remember, list the key facts from their memories clearly
+- Never claim you don't remember something that appears in the memories or conversation history above`;
+
+  // ── Build messages array: history + current message ───────────────────────────
+  // We pass the last N turns of history as real messages — this gives Grok
+  // the full local conversation context, not just semantic search snippets.
+  // Then add the current user message at the end.
+  const historyMessages = recentHistory.slice(0, -1); // exclude the very last (current msg already in history via storage race)
+  const messages = [
+    ...historyMessages,
+    { role: "user" as const, content: userMessage },
+  ];
+
+  // ── Call xAI Grok ─────────────────────────────────────────────────────────────
   const grokRes = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -113,11 +160,11 @@ IMPORTANT: The memories above are real excerpts from past conversations with thi
     },
     body: JSON.stringify({
       model: "grok-3-fast-beta",
-      max_tokens: 1024,
+      max_tokens: 1500,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
+        ...messages,
       ],
     }),
     signal: AbortSignal.timeout(60000),
@@ -129,24 +176,27 @@ IMPORTANT: The memories above are real excerpts from past conversations with thi
     return NextResponse.json({ error: "AI service error." }, { status: 502 });
   }
 
-  // ── 5. Stream response back to client, collect full text for storage ─────────
+  // ── Stream response ───────────────────────────────────────────────────────────
   const encoder = new TextEncoder();
   let fullResponse = "";
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Send memory metadata first as a JSON event
-      const memMeta = JSON.stringify({
-        type: "memory_context",
-        memories: memories.map((m) => ({
-          cid: m.cid,
-          score: m.score,
-          role: m.metadata?.role,
-          text: m.metadata?.text ?? m.text,
-        })),
-        userCid,
-      });
-      controller.enqueue(encoder.encode(`data: ${memMeta}\n\n`));
+      // First event: memory metadata for the UI
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            type: "memory_context",
+            memories: memories.map((m) => ({
+              cid: m.cid,
+              score: m.score,
+              role: m.metadata?.role,
+              text: m.metadata?.text,
+            })),
+            userCid,
+          })}\n\n`
+        )
+      );
 
       const reader = grokRes.body!.getReader();
       const dec = new TextDecoder();
@@ -157,35 +207,26 @@ IMPORTANT: The memories above are real excerpts from past conversations with thi
           if (done) break;
 
           const chunk = dec.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-
-          for (const line of lines) {
+          for (const line of chunk.split("\n")) {
             if (!line.startsWith("data: ")) continue;
             const raw = line.slice(6).trim();
             if (raw === "[DONE]") continue;
-
             try {
-              const parsed = JSON.parse(raw);
-              // OpenAI-compatible streaming format
-              const delta = parsed.choices?.[0]?.delta?.content;
+              const delta = JSON.parse(raw).choices?.[0]?.delta?.content;
               if (typeof delta === "string" && delta.length > 0) {
                 fullResponse += delta;
                 controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify({ type: "token", text: delta })}\n\n`
-                  )
+                  encoder.encode(`data: ${JSON.stringify({ type: "token", text: delta })}\n\n`)
                 );
               }
-            } catch {
-              // malformed chunk — skip
-            }
+            } catch { /* skip */ }
           }
         }
       } finally {
         reader.releaseLock();
       }
 
-      // ── 6. Store the AI response in Engram ────────────────────────────────────
+      // Store AI response on Engram
       if (fullResponse) {
         const aiCid = await ingestToEngram(fullResponse, {
           role: "assistant",
@@ -193,11 +234,8 @@ IMPORTANT: The memories above are real excerpts from past conversations with thi
           text: fullResponse.slice(0, 500),
           ts: String(Date.now()),
         });
-
         controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "stored", aiCid })}\n\n`
-          )
+          encoder.encode(`data: ${JSON.stringify({ type: "stored", aiCid })}\n\n`)
         );
       }
 

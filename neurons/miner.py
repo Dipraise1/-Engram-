@@ -90,7 +90,8 @@ class ChatStore:
                 user_id   TEXT NOT NULL,
                 ts        INTEGER NOT NULL,
                 role      TEXT NOT NULL,
-                content   TEXT NOT NULL
+                content   TEXT NOT NULL,
+                msg_ts    INTEGER
             )
         """)
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_user ON chats(user_id, ts)")
@@ -102,19 +103,25 @@ class ChatStore:
             self._conn.execute("DELETE FROM chats WHERE user_id = ?", (user_id,))
             now = int(time.time() * 1000)
             rows = [
-                (user_id, now + i, m.get("role", "user"), m.get("content", ""))
+                (
+                    user_id,
+                    now + i,
+                    m.get("role", "user"),
+                    m.get("content", ""),
+                    m.get("ts") or (now + i),
+                )
                 for i, m in enumerate(messages[-self.MAX_MESSAGES:])
             ]
             self._conn.executemany(
-                "INSERT INTO chats(user_id, ts, role, content) VALUES(?,?,?,?)", rows
+                "INSERT INTO chats(user_id, ts, role, content, msg_ts) VALUES(?,?,?,?,?)", rows
             )
 
     def load(self, user_id: str) -> list[dict]:
         cur = self._conn.execute(
-            "SELECT role, content FROM chats WHERE user_id = ? ORDER BY ts ASC",
+            "SELECT role, content, msg_ts FROM chats WHERE user_id = ? ORDER BY ts ASC",
             (user_id,),
         )
-        return [{"role": row[0], "content": row[1]} for row in cur.fetchall()]
+        return [{"role": row[0], "content": row[1], "ts": row[2]} for row in cur.fetchall()]
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

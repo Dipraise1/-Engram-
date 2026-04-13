@@ -33,10 +33,34 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  ts?: number;                   // unix ms timestamp
   retrievedMemories?: Memory[];
   storedCid?: string | null;
   userCid?: string | null;
   isStreaming?: boolean;
+}
+
+// ── Date grouping helpers ──────────────────────────────────────────────────────
+
+function dateLabel(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86400000;
+  if (ts >= todayStart) return "Today";
+  if (ts >= yesterdayStart) return "Yesterday";
+  return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+}
+
+function groupMessagesByDate(messages: Message[]): { label: string; messages: Message[] }[] {
+  const groups: Map<string, Message[]> = new Map();
+  for (const msg of messages) {
+    const ts = msg.ts ?? 0;
+    const label = ts ? dateLabel(ts) : "Earlier";
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label)!.push(msg);
+  }
+  return Array.from(groups.entries()).map(([label, msgs]) => ({ label, messages: msgs }));
 }
 
 // ── Share encode/decode ────────────────────────────────────────────────────────
@@ -95,10 +119,11 @@ async function serverLoad(uid: string): Promise<Message[]> {
     if (!res.ok) return [];
     const data = await res.json();
     return (data.messages ?? []).map(
-      (m: { role: string; content: string }, i: number) => ({
+      (m: { role: string; content: string; ts?: number }, i: number) => ({
         id: `srv_${i}`,
         role: m.role as "user" | "assistant",
         content: m.content,
+        ts: m.ts ?? (Date.now() - (data.messages.length - i) * 60000),
       })
     );
   } catch {
@@ -113,7 +138,7 @@ async function serverSave(uid: string, messages: Message[]) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         uid,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: messages.map((m) => ({ role: m.role, content: m.content, ts: m.ts })),
       }),
     });
   } catch { /* best-effort */ }
@@ -195,6 +220,50 @@ function MessageBubble({ msg, readOnly }: { msg: Message; readOnly: boolean }) {
           <span className="font-mono truncate max-w-[160px]">
             {msg.storedCid.slice(0, 8)}…{msg.storedCid.slice(-6)}
           </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Date group ─────────────────────────────────────────────────────────────────
+
+function DateGroup({ label, messages, readOnly }: { label: string; messages: Message[]; readOnly: boolean }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const isToday = label === "Today";
+
+  return (
+    <div className="flex flex-col gap-1">
+      {/* Section header */}
+      <button
+        onClick={() => !isToday && setCollapsed((v) => !v)}
+        className={`flex items-center gap-2 self-center text-[11px] text-white/25 hover:text-white/50 transition-colors rounded-full px-3 py-1 ${
+          isToday ? "cursor-default" : "hover:bg-white/5 touch-manipulation"
+        }`}
+      >
+        <span className="w-8 h-px bg-white/10" />
+        <span>{label}</span>
+        <span className="w-8 h-px bg-white/10" />
+        {!isToday && (
+          collapsed
+            ? <ChevronDown className="w-3 h-3 ml-1" />
+            : <ChevronUp className="w-3 h-3 ml-1" />
+        )}
+      </button>
+
+      {/* Messages in this group */}
+      {!collapsed && (
+        <div className="flex flex-col gap-5 mt-2">
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} msg={msg} readOnly={readOnly} />
+          ))}
+        </div>
+      )}
+
+      {/* Collapsed summary */}
+      {collapsed && (
+        <div className="self-center text-[11px] text-white/20 px-3">
+          {messages.length} message{messages.length !== 1 ? "s" : ""} hidden
         </div>
       )}
     </div>
@@ -350,17 +419,20 @@ function MemoryPageInner() {
     setInput("");
     setError(null);
 
+    const now = Date.now();
     const userMsg: Message = {
-      id: `u_${Date.now()}`,
+      id: `u_${now}`,
       role: "user",
       content: text,
+      ts: now,
     };
 
-    const aiMsgId = `a_${Date.now()}`;
+    const aiMsgId = `a_${now + 1}`;
     const aiMsg: Message = {
       id: aiMsgId,
       role: "assistant",
       content: "",
+      ts: now + 1,
       isStreaming: true,
     };
 
@@ -540,9 +612,9 @@ function MemoryPageInner() {
             </div>
           )}
 
-          {/* Messages */}
-          {messages.map((msg) => (
-            <MessageBubble key={msg.id} msg={msg} readOnly={readOnly} />
+          {/* Messages grouped by date */}
+          {groupMessagesByDate(messages).map((group) => (
+            <DateGroup key={group.label} label={group.label} messages={group.messages} readOnly={readOnly} />
           ))}
 
           {/* Typing indicator */}

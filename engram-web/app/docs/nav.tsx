@@ -12,6 +12,7 @@ const NAV = [
     items: [
       { href: "/docs", label: "Introduction" },
       { href: "/docs/quickstart", label: "Quick Start" },
+      { href: "/docs/memory-ai", label: "Memory AI ✦" },
     ],
   },
   {
@@ -48,6 +49,7 @@ const NAV = [
 
 const SEARCH_INDEX = [
   { title: "Quick Start", href: "/docs/quickstart", desc: "Install and run your first ingest + query" },
+  { title: "Memory AI", href: "/docs/memory-ai", desc: "Permanent per-user AI memory — how it works and how to build it" },
   { title: "EngramClient", href: "/docs/sdk", desc: "Python SDK — ingest, query, batch, auto-discovery" },
   { title: "Private Namespaces", href: "/docs/namespaces", desc: "Encrypted, access-controlled private collections" },
   { title: "LangChain Integration", href: "/docs/sdk-langchain", desc: "Use Engram as a LangChain VectorStore" },

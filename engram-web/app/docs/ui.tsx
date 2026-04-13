@@ -112,7 +112,7 @@ export function H1({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function H2({ id, children }: { id: string; children: React.ReactNode }) {
+export function H2({ id, children }: { id?: string; children: React.ReactNode }) {
   return (
     <h2 id={id} className="font-display font-light text-white mt-12 mb-3 scroll-mt-20"
       style={{ fontSize: "clamp(20px, 2.5vw, 28px)", letterSpacing: "-0.01em" }}>
@@ -188,28 +188,55 @@ export function Note({ children, type = "info" }: { children: React.ReactNode; t
   );
 }
 
-// ── Step list ─────────────────────────────────────────────────────────────────
+// ── Step list (array style) ───────────────────────────────────────────────────
 
-export function Steps({ steps }: { steps: { title: string; desc?: string; code?: string; lang?: string }[] }) {
+export function Steps({ steps, children }: {
+  steps?: { title: string; desc?: string; code?: string; lang?: string }[];
+  children?: React.ReactNode;
+}) {
   return (
     <div className="relative my-6">
       <div className="absolute left-[19px] top-6 bottom-6 w-px bg-[#1e1525]" />
       <div className="space-y-6">
-        {steps.map((step, i) => (
-          <div key={i} className="flex gap-4">
-            <div className="flex-shrink-0 w-10 h-10 rounded-full border border-[#1e1525] bg-[#0e0b12] flex items-center justify-center z-10">
-              <span className="text-[12px] font-mono text-[#e040fb]">{String(i + 1).padStart(2, "0")}</span>
-            </div>
-            <div className="flex-1 pt-2 pb-2">
-              <div className="text-[15px] font-semibold text-white mb-1">{step.title}</div>
-              {step.desc && <p className="text-[13px] text-[#6b5a7e] mb-0">{step.desc}</p>}
-              {step.code && <Code lang={step.lang ?? "bash"}>{step.code}</Code>}
-            </div>
-          </div>
-        ))}
+        {steps
+          ? steps.map((step, i) => (
+              <div key={i} className="flex gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full border border-[#1e1525] bg-[#0e0b12] flex items-center justify-center z-10">
+                  <span className="text-[12px] font-mono text-[#e040fb]">{String(i + 1).padStart(2, "0")}</span>
+                </div>
+                <div className="flex-1 pt-2 pb-2">
+                  <div className="text-[15px] font-semibold text-white mb-1">{step.title}</div>
+                  {step.desc && <p className="text-[13px] text-[#6b5a7e] mb-0">{step.desc}</p>}
+                  {step.code && <Code lang={step.lang ?? "bash"}>{step.code}</Code>}
+                </div>
+              </div>
+            ))
+          : children}
       </div>
     </div>
   );
+}
+
+// ── Individual step (for JSX children style) ──────────────────────────────────
+
+export function Step({ n, title, children }: { n: number; title: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex gap-4">
+      <div className="flex-shrink-0 w-10 h-10 rounded-full border border-[#1e1525] bg-[#0e0b12] flex items-center justify-center z-10">
+        <span className="text-[12px] font-mono text-[#e040fb]">{String(n).padStart(2, "0")}</span>
+      </div>
+      <div className="flex-1 pt-2 pb-2">
+        <div className="text-[15px] font-semibold text-white mb-1">{title}</div>
+        {children && <div className="text-[13px] text-[#6b5a7e]">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── CodeBlock alias (same as Code) ────────────────────────────────────────────
+
+export function CodeBlock({ code, lang, title }: { code: string; lang?: string; title?: string }) {
+  return <Code lang={lang} title={title}>{code}</Code>;
 }
 
 // ── Page shell ────────────────────────────────────────────────────────────────
