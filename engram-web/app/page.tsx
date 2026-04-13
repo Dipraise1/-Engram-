@@ -119,6 +119,7 @@ function Navbar() {
           <a href="#sdk" className="hover:text-white/70 transition-colors">SDK</a>
           <a href="#mine" className="hover:text-white/70 transition-colors">Mine</a>
           <Link href="/playground" className="hover:text-white/70 transition-colors">Playground</Link>
+          <Link href="/memory" className="hover:text-white/70 transition-colors">Memory AI</Link>
           <Link href="/dashboard" className="hover:text-white/70 transition-colors">Dashboard</Link>
           <Link href="/docs" className="hover:text-white/70 transition-colors">Docs</Link>
         </div>
@@ -227,7 +228,11 @@ function Hero() {
                 <StatsBadge label="recall@K" value="1.0" />
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Link href="/memory"
+                  className="group flex items-center gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold text-[13px] px-6 py-3 rounded-full transition-all font-sans">
+                  AI Demo <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                </Link>
                 <Link href="/playground"
                   className="group flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-[13px] px-6 py-3 rounded-full transition-all font-sans">
                   Try it live <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
