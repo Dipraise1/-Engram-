@@ -132,7 +132,7 @@ engram status
 ```bash
 # Live metagraph (connects to chain, health-probes all miners)
 engram status --live
-engram status --live --netuid 42
+engram status --live --netuid 450
 ```
 
 **Flags:**

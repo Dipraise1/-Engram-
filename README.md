@@ -97,7 +97,7 @@ engram ingest --dir ./docs          # recursive directory ingest
 engram query "what is self-attention?"
 
 engram status                        # local store info
-engram status --live --netuid 42     # live metagraph + miner health
+engram status --live --netuid 450    # live metagraph + miner health
 ```
 
 ---
@@ -128,11 +128,18 @@ index = VectorStoreIndex.from_documents(
 btcli wallet new_coldkey --wallet.name engram
 btcli wallet new_hotkey --wallet.name engram --wallet.hotkey miner
 
-# Register on subnet
-btcli subnet register --netuid 42 --wallet.name engram --wallet.hotkey miner
+# Register on subnet (testnet)
+btcli subnet register --netuid 450 --wallet.name engram --wallet.hotkey miner --subtensor.network test
+
+# Configure
+cp .env.example .env.miner
+# Edit WALLET_NAME, WALLET_HOTKEY, NETUID=450, SUBTENSOR_NETWORK=test
 
 # Start
-python neurons/miner.py --wallet.name engram --wallet.hotkey miner --netuid 42
+ENV_FILE=.env.miner python neurons/miner.py
+
+# Seed ground truth vectors so storage proof challenges pass
+python scripts/seed_miner_ground_truth.py --miner-url http://YOUR_IP:8091
 ```
 
 Full setup: [docs/miner.md](docs/miner.md)
@@ -142,8 +149,12 @@ Full setup: [docs/miner.md](docs/miner.md)
 ## Running a Validator
 
 ```bash
-btcli subnet register --netuid 42 --wallet.name engram --wallet.hotkey validator
-python neurons/validator.py --wallet.name engram --wallet.hotkey validator --netuid 42
+btcli subnet register --netuid 450 --wallet.name engram --wallet.hotkey validator --subtensor.network test
+
+cp .env.example .env.validator
+# Edit WALLET_NAME, WALLET_HOTKEY, NETUID=450, SUBTENSOR_NETWORK=test
+
+ENV_FILE=.env.validator python neurons/validator.py
 ```
 
 Full setup: [docs/validator.md](docs/validator.md)
@@ -240,9 +251,9 @@ cargo test --manifest-path engram-core/Cargo.toml --no-default-features
 | Network | Bittensor (TAO) |
 | Type | Infrastructure / Storage |
 | Status | Testnet |
-| Subnet UID | 42 (testnet) |
-| Canonical embedding model | `text-embedding-3-small` (1536d) |
-| Vector index | FAISS (IVF-flat) |
+| Subnet UID | 450 (testnet) |
+| Canonical embedding model | `all-MiniLM-L6-v2` (384d, local) |
+| Vector index | FAISS HNSW |
 | Proof type | HMAC-SHA256 challenge-response |
 
 ---
@@ -252,7 +263,7 @@ cargo test --manifest-path engram-core/Cargo.toml --no-default-features
 - **Website** — [theengram.space](https://theengram.space)
 - **Docs** — [theengram.space/docs](https://theengram.space/docs)
 - **Dashboard** — [theengram.space/dashboard](https://theengram.space/dashboard)
-- **API** — [api.theengram.space/health](https://api.theengram.space/health)
+- **Miner API** — `http://72.62.2.34:8091/health`
 
 ---
 

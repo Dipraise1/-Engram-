@@ -75,7 +75,7 @@ python neurons/validator.py
 Startup log:
 
 ```
-INFO  Engram Validator v0.1.0 | network=finney | netuid=42
+INFO  Engram Validator v0.1.0 | network=finney | netuid=450
 INFO  Ground truth entries: 1000
 INFO  DHT ready | peers=15
 ```

@@ -108,7 +108,7 @@ python neurons/miner.py
 The miner logs its startup sequence:
 
 ```
-INFO  Engram Miner v0.1.0 | network=finney | netuid=42
+INFO  Engram Miner v0.1.0 | network=finney | netuid=450
 INFO  Wallet: 5FHGPfix...
 INFO  Vector store: qdrant | 0 vectors loaded
 INFO  DHT ready | peers=12 | uid=7

@@ -56,7 +56,7 @@ The miner runs an **aiohttp JSON HTTP server** (default port `8091`) that expose
 On startup the miner:
 1. Connects to subtensor and loads the metagraph
 2. Initialises the vector store (Qdrant or FAISS)
-3. Loads the sentence embedder (OpenAI or local)
+3. Loads the local sentence-transformers embedder (all-MiniLM-L6-v2)
 4. Bootstraps the DHT routing table from metagraph axons
 5. Registers its axon on-chain via `subtensor.serve_axon()`
 6. Re-syncs the metagraph every 60 seconds in the background
@@ -108,7 +108,7 @@ Client                   Miner                    Chain
   │                        │                        │
   │── POST /IngestSynapse ──►                        │
   │   {text, metadata}      │                        │
-  │                    embed(text) → float32[1536]   │
+  │                    embed(text) → float32[384]   │
   │                    cid = SHA-256(emb ‖ meta ‖ v) │
   │                    store.upsert(cid, embedding)  │
   │                    replication_mgr.register(cid) │

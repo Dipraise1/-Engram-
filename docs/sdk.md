@@ -83,13 +83,13 @@ Store a pre-computed embedding vector, skipping the embed step on the miner.
 
 ```python
 import numpy as np
-vec = np.random.randn(1536).astype(np.float32).tolist()
+vec = np.random.randn(384).astype(np.float32).tolist()
 cid = client.ingest_embedding(vec, metadata={"type": "custom"})
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `embedding` | `list[float]` | Float32 vector (must match miner's `EMBEDDING_DIM`, default 1536) |
+| `embedding` | `list[float]` | Float32 vector (must match miner's `EMBEDDING_DIM`, default 384) |
 | `metadata` | `dict` | Optional metadata |
 
 **Returns:** CID string

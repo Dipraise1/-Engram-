@@ -28,7 +28,7 @@ Either `text` or `raw_embedding` must be provided. If `text` is given, the miner
 | Field | Type | Required | Constraints |
 |-------|------|----------|-------------|
 | `text` | `string \| null` | One of text/raw_embedding | Max 8192 chars |
-| `raw_embedding` | `float[] \| null` | One of text/raw_embedding | Must match `EMBEDDING_DIM` (1536) |
+| `raw_embedding` | `float[] \| null` | One of text/raw_embedding | Must match `EMBEDDING_DIM = 384) |
 | `metadata` | `object` | No | Max 4096 bytes (JSON-encoded) |
 | `model_version` | `string` | No | Default `"v1"` |
 
@@ -415,8 +415,8 @@ All subnet-wide constants are in `engram/config.py`:
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `EMBEDDING_DIM` | 1536 | Vector dimension (OpenAI text-embedding-3-small) |
-| `CANONICAL_MODEL` | `text-embedding-3-small` | Canonical embedding model |
+| `EMBEDDING_DIM = 384 | Vector dimension (OpenAI all-MiniLM-L6-v2) |
+| `CANONICAL_MODEL` | `all-MiniLM-L6-v2` | Canonical embedding model |
 | `CANONICAL_MODEL_VERSION` | `v1` | Model epoch string used in CID generation |
 | `REPLICATION_FACTOR` | 3 | Number of miners that store each CID |
 | `RECALL_K` | 10 | K for recall@K evaluation |
