@@ -37,6 +37,7 @@ from engram.miner.embedder import get_embedder
 from engram.miner.ingest import IngestHandler
 from engram.miner.metrics import METRICS, generate_latest
 from engram.miner.namespace import NamespaceRegistry
+from engram.miner.attestation import AttestationRegistry
 from engram.miner.query import QueryHandler
 from engram.miner.auth import AuthError, verify_request
 from engram.miner.rate_limiter import RateLimiter
@@ -246,11 +247,13 @@ async def run() -> None:
     store              = build_store(backend)
     embedder           = get_embedder()
     ns_registry        = NamespaceRegistry()
+    att_registry       = AttestationRegistry(subtensor=subtensor, netuid=netuid)
     ingest_handler     = IngestHandler(store=store, embedder=embedder,
                                        subtensor=subtensor, netuid=netuid,
                                        namespace_registry=ns_registry)
     query_handler      = QueryHandler(store=store, embedder=embedder,
-                                      namespace_registry=ns_registry)
+                                      namespace_registry=ns_registry,
+                                      attestation_registry=att_registry)
     rate_limiter       = RateLimiter()
     wallet_tracker     = WalletTracker()
     chat_store         = ChatStore(os.getenv("CHAT_DB_PATH", "./data/chats.db"))
@@ -525,6 +528,72 @@ async def run() -> None:
             logger.error(f"Namespace error: {exc}")
             return web.json_response({"error": "Internal error — check miner logs."}, status=500)
 
+    async def handle_attest(req: web.Request) -> web.Response:
+        """
+        Attest a namespace to a Bittensor hotkey.
+
+        POST /AttestNamespace
+        Body: {
+          "namespace":    str,
+          "owner_hotkey": str (SS58),
+          "signature":    str (hex sr25519),
+          "timestamp_ms": int
+        }
+
+        Anyone can call this — but only the hotkey owner can produce a valid
+        signature, and the on-chain stake of that hotkey determines trust tier.
+        """
+        try:
+            body = await req.json()
+            namespace    = body.get("namespace", "")
+            owner_hotkey = body.get("owner_hotkey", "")
+            signature    = body.get("signature", "")
+            timestamp_ms = body.get("timestamp_ms", 0)
+
+            if not all([namespace, owner_hotkey, signature, timestamp_ms]):
+                return web.json_response(
+                    {"error": "Required fields: namespace, owner_hotkey, signature, timestamp_ms"},
+                    status=400,
+                )
+
+            att = att_registry.attest(
+                namespace=namespace,
+                owner_hotkey=owner_hotkey,
+                signature_hex=signature,
+                timestamp_ms=int(timestamp_ms),
+            )
+            return web.json_response({
+                "ok":         True,
+                "namespace":  att.namespace,
+                "trust_tier": att.trust_tier.value,
+                "stake_tao":  att.stake_tao,
+            })
+
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.error(f"Attestation error: {exc}")
+            return web.json_response({"error": "Internal error — check miner logs."}, status=500)
+
+    async def handle_attestation_get(req: web.Request) -> web.Response:
+        """GET /attestation/{namespace} — return trust info for a namespace."""
+        namespace = req.match_info.get("namespace", "")
+        att = att_registry.get(namespace)
+        if att is None:
+            return web.json_response({
+                "namespace":  namespace,
+                "trust_tier": "anonymous",
+                "attested":   False,
+            })
+        return web.json_response({
+            "namespace":    att.namespace,
+            "owner_hotkey": att.owner_hotkey,
+            "trust_tier":   att.trust_tier.value,
+            "stake_tao":    att.stake_tao,
+            "attested_at":  att.attested_at,
+            "attested":     True,
+        })
+
     async def handle_wallet_stats(req: web.Request) -> web.Response:
         # Restrict to loopback — this endpoint exposes all wallet activity data.
         peername = req.transport.get_extra_info("peername") if req.transport else None
@@ -683,6 +752,8 @@ async def run() -> None:
     app.router.add_post("/QuerySynapse",            handle_query)
     app.router.add_post("/ChallengeSynapse",        handle_challenge)
     app.router.add_post("/namespace",               handle_namespace)
+    app.router.add_post("/AttestNamespace",         handle_attest)
+    app.router.add_get("/attestation/{namespace}",  handle_attestation_get)
     app.router.add_get("/chat-history/{user_id}",   handle_chat_history_get)
     app.router.add_post("/chat-history",            handle_chat_history_post)
     app.router.add_get("/conversations/{user_id}",  handle_conversations_get)

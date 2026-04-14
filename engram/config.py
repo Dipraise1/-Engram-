@@ -45,6 +45,17 @@ SLASH_THRESHOLD: float = 0.5
 MIN_CHALLENGES_BEFORE_SLASH: int = 5   # minimum sample size before a miner can be slashed
 MAX_KNOWN_CIDS: int = 100_000          # cap to prevent unbounded memory growth
 
+# ── Namespace Attestation — Trust Tiers ───────────────────────────────────────
+# Stake thresholds (TAO) that determine how much an agent should trust content
+# written to a namespace. The chain is the authority — no central moderation.
+TRUST_TIER_SOVEREIGN:  float = 1000.0   # protocol-level trusted entities
+TRUST_TIER_VERIFIED:   float = 100.0    # significant economic accountability
+TRUST_TIER_COMMUNITY:  float = 1.0      # basic skin in the game
+# Below COMMUNITY = "anonymous" — no stake, no guarantees
+
+# How often to refresh a namespace owner's stake from the metagraph (seconds)
+ATTESTATION_STAKE_REFRESH_SECS: int = 600
+
 # ── Anti-spam ──────────────────────────────────────────────────────────────────
 MIN_INGEST_STAKE_TAO: float = 0.001
 MAX_METADATA_BYTES: int = 4096

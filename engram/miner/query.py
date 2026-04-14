@@ -19,29 +19,41 @@ from engram.protocol import QuerySynapse
 
 
 class QueryHandler:
-    def __init__(self, store: VectorStore, embedder: Embedder, namespace_registry=None) -> None:
+    def __init__(self, store: VectorStore, embedder: Embedder, namespace_registry=None, attestation_registry=None) -> None:
         self._store = store
         self._embedder = embedder
         self._ns_registry = namespace_registry
+        self._att_registry = attestation_registry
 
     def handle(self, synapse: QuerySynapse) -> QuerySynapse:
         from engram.miner.store import _PUBLIC_NS
+        from engram.miner.attestation import TrustTier
         start = time.perf_counter()
 
         try:
-            namespace = self._resolve_namespace(synapse)
-            query_vec = self._resolve_query(synapse)
-            results   = self._store.search(query_vec, top_k=synapse.top_k or DEFAULT_TOP_K, namespace=namespace)
+            namespace  = self._resolve_namespace(synapse)
+            query_vec  = self._resolve_query(synapse)
+            results    = self._store.search(query_vec, top_k=synapse.top_k or DEFAULT_TOP_K, namespace=namespace)
 
             elapsed_ms = (time.perf_counter() - start) * 1000
 
+            # Attach trust tier to every result so agents can filter by trust
+            trust_tier = TrustTier.ANONYMOUS
+            if self._att_registry is not None:
+                trust_tier = self._att_registry.trust_tier(namespace)
+
             synapse.results = [
-                {"cid": r.cid, "score": r.score, "metadata": r.metadata}
+                {
+                    "cid":        r.cid,
+                    "score":      r.score,
+                    "metadata":   r.metadata,
+                    "trust_tier": trust_tier.value,
+                }
                 for r in results
             ]
             synapse.latency_ms = elapsed_ms
 
-            logger.info(f"Query OK | ns={namespace} | hits={len(results)} | {elapsed_ms:.1f}ms")
+            logger.info(f"Query OK | ns={namespace} | tier={trust_tier.value} | hits={len(results)} | {elapsed_ms:.1f}ms")
 
         except ValueError as e:
             logger.warning(f"Query rejected: {e}")
