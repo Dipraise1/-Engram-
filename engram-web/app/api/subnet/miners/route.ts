@@ -4,24 +4,28 @@ const MINER_URL = process.env.MINER_API_URL || "http://72.62.2.34:8091";
 
 export const revalidate = 0;
 
+async function fetchMinerStats(ip: string, port: number): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(`http://${ip}:${port}/stats`, {
+      signal: AbortSignal.timeout(3000),
+      cache: "no-store",
+    });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET() {
   try {
-    // Fetch metagraph (all registered neurons) and our miner's live stats in parallel
-    const [metagraphRes, statsRes] = await Promise.all([
-      fetch(`${MINER_URL}/metagraph`, {
-        signal: AbortSignal.timeout(6000),
-        cache: "no-store",
-      }),
-      fetch(`${MINER_URL}/stats`, {
-        signal: AbortSignal.timeout(5000),
-        cache: "no-store",
-      }),
-    ]);
+    const metagraphRes = await fetch(`${MINER_URL}/metagraph`, {
+      signal: AbortSignal.timeout(6000),
+      cache: "no-store",
+    });
 
     if (!metagraphRes.ok) return NextResponse.json([]);
 
     const metagraph = await metagraphRes.json();
-    const stats = statsRes.ok ? await statsRes.json() : null;
 
     const neurons: Array<{
       uid: number;
@@ -31,31 +35,43 @@ export async function GET() {
       incentive: number;
     }> = metagraph.neurons ?? [];
 
-    const miners = neurons.map((n) => {
-      const isOurs = stats && n.uid === stats.uid;
+    // Fan out /stats calls to every neuron that has a routable IP:port (cap 3s each)
+    const statsResults = await Promise.all(
+      neurons.map((n) =>
+        n.ip && n.ip !== "0.0.0.0" && n.port
+          ? fetchMinerStats(n.ip, n.port)
+          : Promise.resolve(null)
+      )
+    );
+
+    const miners = neurons.map((n, i) => {
+      const live = statsResults[i];
+      const isOnline = live !== null && (live as Record<string, unknown>).status === "ok";
+      const s = live as Record<string, unknown> | null;
+
       return {
         uid: n.uid,
         hotkey: n.hotkey,
-        // For our own miner fill in live stats; others get metagraph data only
-        vectors: isOurs ? (stats.vectors ?? 0) : null,
-        status: isOurs ? (stats.status === "ok" ? "online" : "offline") : "unknown",
-        peers: isOurs ? (stats.peers ?? null) : null,
+        vectors: s ? (s.vectors as number ?? 0) : null,
+        status: live === null ? (n.ip && n.ip !== "0.0.0.0" ? "offline" : "unknown") : "online",
+        peers: s ? (s.peers as number ?? null) : null,
         score:
           n.incentive > 0
             ? n.incentive
-            : isOurs
-            ? (stats.proof_rate ?? null)
+            : isOnline
+            ? (s!.proof_rate as number ?? null)
             : null,
-        latency_ms: isOurs ? (stats.p50_latency_ms ?? null) : null,
-        proof_rate: isOurs ? (stats.proof_rate ?? null) : null,
+        latency_ms: s ? (s.p50_latency_ms as number ?? null) : null,
+        proof_rate: s ? (s.proof_rate as number ?? null) : null,
         stake: null,
       };
     });
 
-    // Sort: online first, then by score descending, then by uid
+    // Sort: online first, then by score desc, then uid asc
     miners.sort((a, b) => {
-      if (a.status === "online" && b.status !== "online") return -1;
-      if (b.status === "online" && a.status !== "online") return 1;
+      const aOnline = a.status === "online" ? 0 : 1;
+      const bOnline = b.status === "online" ? 0 : 1;
+      if (aOnline !== bOnline) return aOnline - bOnline;
       const sa = a.score ?? -1;
       const sb = b.score ?? -1;
       if (sb !== sa) return sb - sa;
