@@ -271,17 +271,22 @@ async def run() -> None:
 
                 if cid:
                     entry = next((e for e in ground_truth._entries if e.cid == cid), None)
-                    challenge = challenge_dispatcher.build_challenge(cid)
 
-                    if challenge and entry is not None:
-                        _base_challenge = {
-                            "cid": challenge.cid,
-                            "nonce_hex": challenge.nonce_hex,
-                            "expires_at": challenge.expires_at,
-                        }
-                        challenge_payload = sign_request(_keypair, "ChallengeSynapse", _base_challenge)
-
+                    if entry is not None:
                         for uid, axon in zip(uids, axons):
+                            # Fresh challenge per miner — each gets a unique nonce so
+                            # the replay-prevention cache doesn't reject subsequent miners.
+                            challenge = challenge_dispatcher.build_challenge(cid)
+                            if challenge is None:
+                                break  # engram_core unavailable
+
+                            _base_challenge = {
+                                "cid": challenge.cid,
+                                "nonce_hex": challenge.nonce_hex,
+                                "expires_at": challenge.expires_at,
+                            }
+                            challenge_payload = sign_request(_keypair, "ChallengeSynapse", _base_challenge)
+
                             _axon_ip  = axon.ip if axon.ip not in ("0.0.0.0", "0") else None
                             _use_ip   = _axon_ip if _axon_ip and _is_routable_ip(_axon_ip) else fallback_miner_ip
                             _use_port = axon.port or fallback_miner_port
