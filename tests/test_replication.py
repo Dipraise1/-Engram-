@@ -1,6 +1,7 @@
 """Tests for replication manager."""
 
 import pytest
+from pathlib import Path
 from engram.storage.dht import DHTRouter, Peer
 from engram.storage.replication import ReplicationManager, ReplicationStatus
 from engram.config import REPLICATION_FACTOR
@@ -15,7 +16,7 @@ def make_manager(n_peers: int = 10) -> ReplicationManager:
     router = DHTRouter(local_peer=local)
     for i in range(1, n_peers + 1):
         router.add_peer(make_peer(i))
-    return ReplicationManager(router=router)
+    return ReplicationManager(router=router, db_path=Path(":memory:"))
 
 
 TEST_CID = "v1::abc123def456abc123def456abc123def456abc123def456abc123def456abc1"

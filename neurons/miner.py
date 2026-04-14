@@ -317,6 +317,67 @@ async def run() -> None:
     _challenge_ok       = 0
     _miner_start_ts     = time.time()
 
+    # ── Replication helper ────────────────────────────────────────────────────
+
+    async def _replicate_to_peers(
+        peers: list,
+        raw_embedding: list[float] | None,
+        cid: str,
+        metadata: dict,
+        wallet_keypair: "bt.Keypair",
+        replication_mgr: "ReplicationManager",
+    ) -> None:
+        """
+        Push a stored embedding to peer miners for 3× replication.
+        Runs as a background task — failures are logged but don't block the ingest response.
+        """
+        from engram.miner.auth import sign_request as _sign_request
+        import urllib.request as _urllib
+        import json as _json
+
+        if raw_embedding is None:
+            logger.warning(f"_replicate_to_peers: no embedding for {cid[:16]}…, skipping push")
+            return
+
+        _base = {
+            "raw_embedding": raw_embedding,
+            "metadata": metadata,
+        }
+        payload_bytes = _json.dumps(
+            _sign_request(wallet_keypair, "IngestSynapse", _base)
+        ).encode()
+
+        def _post_sync(url: str) -> dict | None:
+            try:
+                req = _urllib.Request(
+                    url,
+                    data=payload_bytes,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with _urllib.urlopen(req, timeout=15) as resp:
+                    return _json.loads(resp.read())
+            except Exception as exc:
+                raise exc
+
+        loop = asyncio.get_event_loop()
+        for peer in peers:
+            if not peer.ip or not peer.port:
+                continue
+            url = f"http://{peer.ip}:{peer.port}/IngestSynapse"
+            try:
+                resp_data = await loop.run_in_executor(None, _post_sync, url)
+                if resp_data and resp_data.get("error"):
+                    logger.warning(
+                        f"Replication peer error | uid={peer.uid} | cid={cid[:16]}… "
+                        f"| err={resp_data['error']}"
+                    )
+                else:
+                    replication_mgr.confirm(cid, peer.uid)
+                    logger.debug(f"Replicated | cid={cid[:16]}… → uid={peer.uid}")
+            except Exception as exc:
+                logger.warning(f"Replication failed | uid={peer.uid} | cid={cid[:16]}… | {exc}")
+
     # ── HTTP handlers ─────────────────────────────────────────────────────────
 
     def _rate_limit_key(req: web.Request, hotkey: str | None) -> str:
@@ -366,7 +427,7 @@ async def run() -> None:
             else:
                 METRICS.ingest_total.labels(status="ok").inc()
                 METRICS.vectors_stored.set(store.count())
-                replication_mgr.register(result.cid)
+                record = replication_mgr.register(result.cid)
                 _ingest_count += 1
                 if _ingest_count % SAVE_EVERY == 0:
                     try:
@@ -378,6 +439,28 @@ async def run() -> None:
                     wallet_tracker.record_ingest(caller_hotkey, result.cid)
                 if not router.should_store(result.cid):
                     logger.debug(f"DHT: not primary for {result.cid[:16]}… (stored anyway)")
+                # Push to assigned peer miners in the background (3× replication)
+                peers = router.get_peers_for_uids(record.assigned_uids)
+                remote_peers = [p for p in peers if p.ip != external_ip or p.port != port]
+                if remote_peers:
+                    # Resolve embedding: prefer the raw value from the request,
+                    # fall back to reading it back from the store (avoids a second
+                    # encode/decode round-trip when text was the ingest path).
+                    _emb_for_replication = body.get("raw_embedding")
+                    if _emb_for_replication is None:
+                        _stored_rec = store.get(result.cid)
+                        if _stored_rec is not None:
+                            _emb_for_replication = _stored_rec.embedding.tolist()
+                    asyncio.ensure_future(
+                        _replicate_to_peers(
+                            peers=remote_peers,
+                            raw_embedding=_emb_for_replication,
+                            cid=result.cid,
+                            metadata=body.get("metadata") or {},
+                            wallet_keypair=wallet.hotkey,
+                            replication_mgr=replication_mgr,
+                        )
+                    )
 
             return web.json_response({"cid": result.cid, "error": result.error})
         except Exception as exc:
@@ -438,6 +521,19 @@ async def run() -> None:
             METRICS.query_total.labels(status="error").inc()
             logger.error(f"Query error: {exc}")
             return web.json_response({"error": "Internal error — check miner logs."}, status=500)
+
+    async def handle_retrieve(req: web.Request) -> web.Response:
+        """GET /retrieve/{cid} — return stored metadata for a CID (no auth required)."""
+        cid = req.match_info.get("cid", "").strip()
+        if not cid:
+            return web.json_response({"error": "missing cid"}, status=400)
+        record = store.get(cid)
+        if record is None:
+            return web.json_response({"error": "not found"}, status=404)
+        return web.json_response({
+            "cid":      record.cid,
+            "metadata": record.metadata,
+        })
 
     async def handle_challenge(req: web.Request) -> web.Response:
         nonlocal _challenge_total, _challenge_ok
@@ -760,6 +856,7 @@ async def run() -> None:
     app.router.add_post("/conversations",           handle_conversations_post)
     app.router.add_patch("/conversations/{conv_id}", handle_conversations_patch)
     app.router.add_delete("/conversations/{conv_id}", handle_conversations_delete)
+    app.router.add_get("/retrieve/{cid}",           handle_retrieve)
     app.router.add_get("/health",                   handle_health)
     app.router.add_get("/stats",                    handle_stats)
     app.router.add_get("/metrics",                  handle_metrics)

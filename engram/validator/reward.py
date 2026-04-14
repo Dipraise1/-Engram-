@@ -32,16 +32,28 @@ class RewardManager:
         recall_scores: dict[int, float],          # uid → recall@K
         latency_scores: dict[int, float | None],  # uid → latency_ms
         proof_rates: dict[int, float],            # uid → proof success rate
+        slashed_uids: set[int] | None = None,     # uids that failed slash threshold → weight 0
     ) -> bool:
         """
         Compute final scores, normalize, and commit weights to the chain.
 
+        Miners in slashed_uids receive weight 0 regardless of other scores.
         Returns True if weight-setting succeeded.
         """
         uids = list(metagraph.uids.tolist())
+        slashed = slashed_uids or set()
+
+        if slashed:
+            logger.warning(f"Slashing {len(slashed)} miners with weight=0 | uids={sorted(slashed)}")
 
         raw_scores: dict[int, float] = {}
         for uid in uids:
+            if uid in slashed:
+                # Hard zero — slash overrides all other scores
+                self.moving_averages[uid] = 0.0
+                raw_scores[uid] = 0.0
+                continue
+
             score = compute_miner_score(
                 recall=recall_scores.get(uid, 0.0),
                 latency_ms=latency_scores.get(uid),

@@ -316,14 +316,26 @@ async def run() -> None:
             if now - last_weight_set >= WEIGHT_INTERVAL:
                 last_weight_set = now
                 proof_rates: dict[int, float] = {}
+                slashed_uids: set[int] = set()
                 for uid in uids:
                     record = challenge_dispatcher._records.get(str(uid))  # type: ignore[attr-defined]
-                    proof_rates[int(uid)] = record.success_rate if record else 0.0
+                    if record:
+                        proof_rates[int(uid)] = record.success_rate
+                        if record.should_slash:
+                            slashed_uids.add(int(uid))
+                            logger.warning(
+                                f"Miner uid={uid} flagged for slash | "
+                                f"proof_rate={record.success_rate:.2f} | "
+                                f"challenges={record.total_challenges}"
+                            )
+                    else:
+                        proof_rates[int(uid)] = 0.0
                 reward_manager.set_weights(
                     metagraph=metagraph,
                     recall_scores=recall_scores,
                     latency_scores=latency_scores,
                     proof_rates=proof_rates,
+                    slashed_uids=slashed_uids,
                 )
 
             await asyncio.sleep(10)

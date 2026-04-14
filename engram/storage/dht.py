@@ -205,3 +205,8 @@ class DHTRouter:
 
     def all_peers(self) -> list[Peer]:
         return self._table.all_peers()
+
+    def get_peers_for_uids(self, uids: list[int]) -> list[Peer]:
+        """Return Peer objects for the given UIDs (skips UIDs not in routing table)."""
+        uid_set = set(uids)
+        return [p for p in self._table.all_peers() if p.uid in uid_set]

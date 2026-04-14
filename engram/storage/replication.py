@@ -21,15 +21,22 @@ Multi-miner failure handling:
 
 from __future__ import annotations
 
+import json
+import os
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
+from threading import Lock
 from typing import Iterable
 
 from loguru import logger
 
 from engram.config import REPLICATION_FACTOR
 from engram.storage.dht import DHTRouter, Peer
+
+_DEFAULT_DB = Path(os.getenv("REPLICATION_DB_PATH", "data/replication.db"))
 
 
 # ── Types ─────────────────────────────────────────────────────────────────────
@@ -102,25 +109,81 @@ class ReplicationManager:
     """
     Tracks replication state for all stored CIDs and drives re-replication
     when miners go offline or fail storage proofs.
+
+    State is persisted to SQLite so it survives process restarts.
     """
 
-    def __init__(self, router: DHTRouter) -> None:
-        self._router = router
+    def __init__(self, router: DHTRouter, db_path: Path = _DEFAULT_DB) -> None:
+        self._router  = router
+        self._db_path = db_path
+        self._lock    = Lock()
         self._records: dict[str, ReplicationRecord] = {}
+        self._db_conn = self._open_db()
+        self._load_from_db()
+
+    # ── DB setup ──────────────────────────────────────────────────────────────
+
+    def _open_db(self) -> sqlite3.Connection:
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS replication (
+                cid            TEXT PRIMARY KEY,
+                assigned_uids  TEXT NOT NULL,
+                confirmed_uids TEXT NOT NULL DEFAULT '[]',
+                created_at     REAL NOT NULL,
+                last_checked   REAL NOT NULL DEFAULT 0
+            )
+        """)
+        conn.commit()
+        logger.debug(f"Replication DB opened: {self._db_path}")
+        return conn
+
+    def _load_from_db(self) -> None:
+        rows = self._db_conn.execute(
+            "SELECT cid, assigned_uids, confirmed_uids, created_at, last_checked FROM replication"
+        ).fetchall()
+        for cid, assigned_json, confirmed_json, created_at, last_checked in rows:
+            self._records[cid] = ReplicationRecord(
+                cid=cid,
+                assigned_uids=json.loads(assigned_json),
+                confirmed_uids=json.loads(confirmed_json),
+                created_at=created_at,
+                last_checked=last_checked,
+            )
+        logger.info(f"Replication: loaded {len(self._records)} records from DB")
+
+    def _save_record(self, record: ReplicationRecord) -> None:
+        with self._lock:
+            self._db_conn.execute("""
+                INSERT OR REPLACE INTO replication
+                    (cid, assigned_uids, confirmed_uids, created_at, last_checked)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                record.cid,
+                json.dumps(record.assigned_uids),
+                json.dumps(record.confirmed_uids),
+                record.created_at,
+                record.last_checked,
+            ))
+            self._db_conn.commit()
 
     # ── Registration ──────────────────────────────────────────────────────────
 
     def register(self, cid: str) -> ReplicationRecord:
         """
         Register a new CID for replication tracking.
-        Called immediately after ingest.
+        Called immediately after ingest. Persisted to SQLite.
         """
+        if cid in self._records:
+            return self._records[cid]
         assigned = self._router.assign(cid, replication=REPLICATION_FACTOR)
         record = ReplicationRecord(
             cid=cid,
             assigned_uids=[p.uid for p in assigned],
         )
         self._records[cid] = record
+        self._save_record(record)
         logger.debug(f"Replication registered | cid={cid[:16]}... | assigned={record.assigned_uids}")
         return record
 
@@ -130,6 +193,7 @@ class ReplicationManager:
         if record and uid not in record.confirmed_uids:
             record.confirmed_uids.append(uid)
             record.last_checked = time.time()
+            self._save_record(record)
 
     def unconfirm(self, cid: str, uid: int) -> None:
         """Remove a miner from confirmed holders (failed proof or went offline)."""
@@ -140,6 +204,7 @@ class ReplicationManager:
                 f"Replica lost | cid={cid[:16]}... | uid={uid} | "
                 f"remaining={record.replica_count}"
             )
+            self._save_record(record)
 
     # ── Health ────────────────────────────────────────────────────────────────
 

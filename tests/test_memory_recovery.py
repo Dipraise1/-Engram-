@@ -12,6 +12,7 @@ Tests the replication manager when multiple miners go offline simultaneously:
 from __future__ import annotations
 
 import pytest
+from pathlib import Path
 
 from engram.storage.dht import DHTRouter, Peer
 from engram.storage.replication import (
@@ -33,7 +34,7 @@ def make_manager(n_peers: int = 20) -> ReplicationManager:
     router = DHTRouter(local_peer=local)
     for i in range(1, n_peers + 1):
         router.add_peer(make_peer(i))
-    return ReplicationManager(router=router)
+    return ReplicationManager(router=router, db_path=Path(":memory:"))
 
 
 def fake_cid(tag: str) -> str:
@@ -214,7 +215,7 @@ def test_repair_task_not_actionable_no_online_peers() -> None:
     local = make_peer(0)
     router = DHTRouter(local_peer=local)
     # No peers added — empty routing table
-    mgr = ReplicationManager(router=router)
+    mgr = ReplicationManager(router=router, db_path=Path(":memory:"))
     mgr.register(CID_X)
 
     tasks = mgr.prioritized_repair_queue()

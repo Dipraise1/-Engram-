@@ -30,7 +30,12 @@ try:
     _RUST_AVAILABLE = True
 except ImportError:
     _RUST_AVAILABLE = False
-    logger.warning("engram_core (Rust) not available — storage proof challenges disabled.")
+    logger.error(
+        "engram_core (Rust extension) is not installed — storage proof challenges are DISABLED.\n"
+        "Miners cannot be verified and will score based on recall/latency only.\n"
+        "Build and install engram_core before running on mainnet:\n"
+        "  cd engram-core && maturin develop --release"
+    )
 
 
 @dataclass
