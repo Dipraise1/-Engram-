@@ -801,12 +801,15 @@ async def run() -> None:
             block = subtensor.get_current_block()
         except Exception:
             block = None
-        # Best-effort avg score from metagraph incentive (what miners actually earn)
+        # Best-effort avg score: prefer on-chain incentive, fall back to proof_rate
+        # (on testnet incentives are 0 until emissions activate)
         try:
             scores = [float(x) for x in metagraph.incentive.tolist() if float(x) > 0]
             avg_score = round(sum(scores) / len(scores), 4) if scores else None
         except Exception:
             avg_score = None
+        if avg_score is None:
+            avg_score = proof_rate  # proxy: proof success rate is the best local signal
         return web.json_response({
             "status": "ok",
             "vectors": store.count(),
@@ -820,6 +823,26 @@ async def run() -> None:
             "avg_score": avg_score,
             "hotkey": wallet.hotkey.ss58_address,
         })
+
+    async def handle_metagraph(req: web.Request) -> web.Response:
+        """Public metagraph snapshot — returns all registered neurons for the leaderboard."""
+        try:
+            uids       = metagraph.uids.tolist()
+            incentives = metagraph.incentive.tolist()
+            axons      = metagraph.axons
+            neurons = []
+            for uid, incentive, axon in zip(uids, incentives, axons):
+                neurons.append({
+                    "uid":       int(uid),
+                    "hotkey":    axon.hotkey or None,
+                    "ip":        axon.ip or None,
+                    "port":      int(axon.port) if axon.port else None,
+                    "incentive": round(float(incentive), 6),
+                })
+            return web.json_response({"neurons": neurons, "block": metagraph.block.item()})
+        except Exception as exc:
+            logger.warning(f"handle_metagraph error: {exc}")
+            return web.json_response({"neurons": [], "block": None})
 
     async def handle_metrics(req: web.Request) -> web.Response:
         """Prometheus metrics — localhost only to avoid leaking operational data."""
@@ -859,6 +882,7 @@ async def run() -> None:
     app.router.add_get("/retrieve/{cid}",           handle_retrieve)
     app.router.add_get("/health",                   handle_health)
     app.router.add_get("/stats",                    handle_stats)
+    app.router.add_get("/metagraph",                handle_metagraph)
     app.router.add_get("/metrics",                  handle_metrics)
     app.router.add_get("/wallet-stats",             handle_wallet_stats)
     app.router.add_get("/wallet-stats/{hotkey}",    handle_wallet_stats)

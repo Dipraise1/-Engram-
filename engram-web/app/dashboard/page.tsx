@@ -11,12 +11,12 @@ interface Miner {
   uid: number;
   hotkey: string | null;
   score: number | null;
-  vectors: number;
+  vectors: number | null;
   latency_ms: number | null;
   proof_rate: number | null;
   stake: number | null;
-  status: "online" | "offline";
-  peers: number;
+  status: "online" | "offline" | "unknown";
+  peers: number | null;
 }
 
 interface SubnetStats {
@@ -291,7 +291,7 @@ function MinerTable({ miners, loading }: { miners: Miner[]; loading: boolean }) 
                   </td>
                   <td className="px-5 py-3.5 w-44"><ScoreBar value={m.score} /></td>
                   <td className="px-5 py-3.5 text-right font-mono text-[12px] text-white/50 tabular-nums">
-                    {m.vectors.toLocaleString()}
+                    {m.vectors != null ? m.vectors.toLocaleString() : "—"}
                   </td>
                   <td className="px-5 py-3.5 text-right font-mono text-[12px] tabular-nums"
                     style={{ color: m.latency_ms === null ? "rgba(255,255,255,0.2)" : m.latency_ms < 30 ? "#28c840" : m.latency_ms < 100 ? "#febc2e" : "#f87171" }}>
