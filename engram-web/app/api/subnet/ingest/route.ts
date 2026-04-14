@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const MINER_URL = process.env.MINER_API_URL || "http://98.97.76.65:8091";
+const MINER_URL = process.env.MINER_API_URL || "http://72.62.2.34:8091";
 const MAX_TEXT_CHARS = 8192;
 
 export async function POST(req: Request) {
