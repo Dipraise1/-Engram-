@@ -52,18 +52,22 @@ class EngramClient:
         timeout: float = 30.0,
         namespace: str | None = None,
         namespace_key: str | None = None,
-        keypair=None,  # bt.Keypair — optional signing keypair
+        encryption=None,   # HybridEncryption instance — takes priority over namespace_key
+        keypair=None,      # bt.Keypair — optional signing keypair
     ) -> None:
         self.miner_url     = miner_url.rstrip("/")
         self.timeout       = timeout
         self.namespace     = namespace
         self.namespace_key = namespace_key
         self._keypair      = keypair
-        # Encryption engine — created lazily when namespace is first used
-        self._enc = None
-        if namespace and namespace_key:
+        # Encryption engine: hybrid takes priority over password-based
+        if encryption is not None:
+            self._enc = encryption
+        elif namespace and namespace_key:
             from engram.sdk.encryption import NamespaceEncryption
             self._enc = NamespaceEncryption(namespace, namespace_key)
+        else:
+            self._enc = None
 
     @classmethod
     def from_subnet(
