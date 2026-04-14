@@ -3,18 +3,34 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Github, ArrowUpRight, ChevronRight, ExternalLink, Check, Circle, Zap } from "lucide-react";
+import { ArrowRight, Github, ArrowUpRight, ChevronRight, ExternalLink, Check, Circle, Zap, Menu, X } from "lucide-react";
 
 // ── Live stats ──────────────────────────────────────────────────────────────────
 
 function useLiveStats() {
-  const [stats, setStats] = useState<{ miners: number; vectors: number; uptime: string; avgScore: string } | null>(null);
+  const [stats, setStats] = useState<{
+    miners: number | null;
+    vectors: number | null;
+    uptime: string | null;
+    avgScore: string | null;
+    status: string;
+  } | null>(null);
+
   useEffect(() => {
     async function fetch_() {
       try {
-        const res = await fetch("/api/subnet/stats");
-        if (res.ok) setStats(await res.json());
-      } catch { /* no live API yet */ }
+        const res = await fetch("/api/subnet/stats", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          setStats({
+            miners: data.miners ?? null,
+            vectors: data.vectors ?? null,
+            uptime: data.uptime_pct != null ? `${(data.uptime_pct * 100).toFixed(1)}%` : null,
+            avgScore: data.avg_score != null ? data.avg_score.toFixed(4) : null,
+            status: data.status ?? "unknown",
+          });
+        }
+      } catch { /* offline */ }
     }
     fetch_();
     const id = setInterval(fetch_, 30_000);
@@ -93,49 +109,119 @@ function TermBlock({ title, children, className = "" }: { title?: string; childr
 
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", h);
     return () => window.removeEventListener("scroll", h);
   }, []);
 
+  // Close mobile menu on route navigate
+  useEffect(() => {
+    if (mobileOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
+
+  const navLinks = [
+    { href: "#protocol", label: "Protocol", external: false },
+    { href: "#features", label: "Features", external: false },
+    { href: "#roadmap", label: "Roadmap", external: false },
+    { href: "#sdk", label: "SDK", external: false },
+    { href: "#mine", label: "Mine", external: false },
+    { href: "/playground", label: "Playground", external: false },
+    { href: "/memory", label: "Memory AI", external: false },
+    { href: "/dashboard", label: "Dashboard", external: false },
+    { href: "/docs", label: "Docs", external: false },
+  ];
+
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-      scrolled ? "bg-[#080608]/95 backdrop-blur-xl border-b border-white/[0.06]" : ""
-    }`}>
-      <div className="max-w-6xl mx-auto px-6 h-[64px] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Image src="/logo.png" alt="Engram" width={30} height={30} className="block" />
-          <span className="font-semibold text-[15px] tracking-tight text-white font-sans">Engram</span>
-          <span className="text-[10px] font-semibold tracking-[0.12em] uppercase px-2 py-0.5 rounded border border-[#e040fb]/20 text-[#e040fb]/60 ml-0.5 font-mono">
-            v0.1 · testnet
-          </span>
-        </div>
+    <>
+      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
+        scrolled || mobileOpen ? "bg-[#080608]/95 backdrop-blur-xl border-b border-white/[0.06]" : ""
+      }`}>
+        <div className="max-w-6xl mx-auto px-6 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Image src="/logo.png" alt="Engram" width={30} height={30} className="block" />
+            <span className="font-semibold text-[15px] tracking-tight text-white font-sans">Engram</span>
+            <span className="text-[10px] font-semibold tracking-[0.12em] uppercase px-2 py-0.5 rounded border border-[#e040fb]/20 text-[#e040fb]/60 ml-0.5 font-mono">
+              v0.1 · testnet
+            </span>
+          </div>
 
-        <div className="hidden md:flex items-center gap-8 text-[13px] text-white/35 font-normal">
-          <a href="#protocol" className="hover:text-white/70 transition-colors">Protocol</a>
-          <a href="#features" className="hover:text-white/70 transition-colors">Features</a>
-          <a href="#roadmap" className="hover:text-white/70 transition-colors">Roadmap</a>
-          <a href="#sdk" className="hover:text-white/70 transition-colors">SDK</a>
-          <a href="#mine" className="hover:text-white/70 transition-colors">Mine</a>
-          <Link href="/playground" className="hover:text-white/70 transition-colors">Playground</Link>
-          <Link href="/memory" className="hover:text-white/70 transition-colors">Memory AI</Link>
-          <Link href="/dashboard" className="hover:text-white/70 transition-colors">Dashboard</Link>
-          <Link href="/docs" className="hover:text-white/70 transition-colors">Docs</Link>
-        </div>
+          <div className="hidden md:flex items-center gap-8 text-[13px] text-white/35 font-normal">
+            {navLinks.map(({ href, label }) =>
+              href.startsWith("/") ? (
+                <Link key={href} href={href} className="hover:text-white/70 transition-colors">{label}</Link>
+              ) : (
+                <a key={href} href={href} className="hover:text-white/70 transition-colors">{label}</a>
+              )
+            )}
+          </div>
 
-        <div className="flex items-center gap-3">
-          <a href="https://github.com/Dipraise1/-Engram-" target="_blank" rel="noopener noreferrer"
-            className="text-white/25 hover:text-white/60 transition-colors">
-            <Github className="w-[17px] h-[17px]" />
-          </a>
-          <Link href="/dashboard"
-            className="flex items-center gap-1.5 bg-white text-[#080608] text-[12px] font-bold px-4 py-2 rounded-full hover:bg-white/90 transition-colors tracking-tight font-sans">
-            Launch App <ArrowRight className="w-3 h-3" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <a href="https://github.com/Dipraise1/-Engram-" target="_blank" rel="noopener noreferrer"
+              className="text-white/25 hover:text-white/60 transition-colors hidden md:block">
+              <Github className="w-[17px] h-[17px]" />
+            </a>
+            <Link href="/dashboard"
+              className="hidden md:flex items-center gap-1.5 bg-white text-[#080608] text-[12px] font-bold px-4 py-2 rounded-full hover:bg-white/90 transition-colors tracking-tight font-sans">
+              Launch App <ArrowRight className="w-3 h-3" />
+            </Link>
+            {/* Mobile hamburger */}
+            <button
+              className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg text-white/60 hover:text-white hover:bg-white/5 transition-colors"
+              onClick={() => setMobileOpen((v) => !v)}
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+
+      {/* Mobile menu drawer */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-40 pt-[64px] bg-[#080608]/98 backdrop-blur-xl flex flex-col">
+          <div className="flex flex-col px-6 py-6 gap-1 flex-1 overflow-y-auto">
+            {navLinks.map(({ href, label }) =>
+              href.startsWith("/") ? (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center text-[16px] text-white/60 hover:text-white py-3 border-b border-white/[0.06] transition-colors"
+                >
+                  {label}
+                </Link>
+              ) : (
+                <a
+                  key={href}
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center text-[16px] text-white/60 hover:text-white py-3 border-b border-white/[0.06] transition-colors"
+                >
+                  {label}
+                </a>
+              )
+            )}
+          </div>
+          <div className="px-6 py-6 flex items-center gap-4 border-t border-white/[0.06]">
+            <a href="https://github.com/Dipraise1/-Engram-" target="_blank" rel="noopener noreferrer"
+              className="text-white/40 hover:text-white transition-colors">
+              <Github className="w-5 h-5" />
+            </a>
+            <Link
+              href="/dashboard"
+              onClick={() => setMobileOpen(false)}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-white text-[#080608] text-[13px] font-bold px-4 py-2.5 rounded-full hover:bg-white/90 transition-colors"
+            >
+              Launch App <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -223,8 +309,8 @@ function Hero() {
               {/* Live stats bar */}
               <div className="flex flex-wrap gap-2 mb-8">
                 <StatsBadge label="subnet" value="450 · testnet" live />
-                <StatsBadge label="vectors" value={stats ? stats.vectors.toLocaleString() : "1,088"} />
-                <StatsBadge label="miners" value={stats ? `${stats.miners} online` : "2 online"} />
+                <StatsBadge label="vectors" value={stats?.vectors != null ? stats.vectors.toLocaleString() : "—"} />
+                <StatsBadge label="miners" value={stats?.miners != null ? `${stats.miners} online` : "—"} />
                 <StatsBadge label="recall@K" value="1.0" />
               </div>
 
@@ -543,7 +629,7 @@ const PHASES = [
     title: "Testnet Alpha",
     status: "current" as const,
     date: "Q2 2026",
-    items: ["Subnet 450 live", "Miner + validator running", "1,000+ ground truth vectors", "LangChain + LlamaIndex adapters", "Public GitHub + docs"],
+    items: ["Subnet 450 live", "Miner + validator running", "Seed corpus + ground truth vectors", "LangChain + LlamaIndex adapters", "Public GitHub + docs"],
   },
   {
     phase: "Phase 2",
