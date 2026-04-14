@@ -18,7 +18,7 @@ export default function NamespacesPage() {
   return (
     <DocPage
       prev={{ href: "/docs/sdk", label: "EngramClient" }}
-      next={{ href: "/docs/sdk-langchain", label: "LangChain" }}
+      next={{ href: "/docs/attestation", label: "Namespace Attestation" }}
       toc={[
         { id: "overview", label: "Overview" },
         { id: "how-it-works", label: "How it works" },

@@ -268,6 +268,125 @@ Miners with score 0 receive weight 0 and earn no emissions.
 
 ---
 
+## Namespace Attestation
+
+Namespace attestation links a namespace to a Bittensor hotkey. The hotkey's
+on-chain TAO stake becomes a publicly verifiable trust signal — no central
+moderation required.
+
+### Trust Tiers
+
+| Tier | Stake required | Meaning |
+|------|---------------|---------|
+| `sovereign` | ≥ 1000 TAO | Protocol-level trusted entity |
+| `verified` | ≥ 100 TAO | Significant economic accountability |
+| `community` | ≥ 1 TAO | Basic skin in the game |
+| `anonymous` | < 1 TAO or unattested | No guarantees |
+
+Stake is refreshed from the metagraph every 600 seconds. If the owner's stake
+drops below their tier threshold, the tier degrades automatically.
+
+### POST /AttestNamespace
+
+Link a namespace to a hotkey. Anyone can call this endpoint, but only the
+hotkey owner can produce a valid sr25519 signature.
+
+**Request:**
+
+```json
+{
+  "namespace":    "my_agent_memory",
+  "owner_hotkey": "5FakeHotkey...",
+  "signature":    "0xabc123...",
+  "timestamp_ms": 1712345678123
+}
+```
+
+The signature must be a sr25519 signature over the canonical message:
+
+```
+f"engram-attest:{namespace}:{timestamp_ms}"
+```
+
+Timestamp must be within ±60 seconds of server time (replay protection).
+
+**Response:**
+
+```json
+{
+  "ok": true,
+  "namespace": "my_agent_memory",
+  "trust_tier": "verified",
+  "stake_tao": 250.0
+}
+```
+
+### GET /attestation/{namespace}
+
+Check the trust tier of any namespace.
+
+**Response (attested):**
+
+```json
+{
+  "namespace":    "my_agent_memory",
+  "owner_hotkey": "5FakeHotkey...",
+  "trust_tier":   "verified",
+  "stake_tao":    250.0,
+  "attested_at":  1712345678.0,
+  "attested":     true
+}
+```
+
+**Response (unattested):**
+
+```json
+{
+  "namespace":  "unknown_ns",
+  "trust_tier": "anonymous",
+  "attested":   false
+}
+```
+
+### trust_tier in query results
+
+Every query result now includes a `trust_tier` field:
+
+```json
+{
+  "results": [
+    {
+      "cid":        "v1::a3f2b1...",
+      "score":      0.9821,
+      "metadata":   {"source": "arxiv"},
+      "trust_tier": "verified"
+    }
+  ]
+}
+```
+
+Agents can filter by trust tier:
+
+```python
+results = client.query("attention mechanisms")
+trusted = [r for r in results if r["trust_tier"] in ("verified", "sovereign")]
+```
+
+### Signing an attestation (Python SDK)
+
+```python
+from engram.miner.attestation import build_attestation_payload
+import bittensor as bt
+import requests
+
+wallet = bt.wallet(name="my_wallet")
+payload = build_attestation_payload(wallet.hotkey, "my_namespace")
+resp = requests.post("http://miner:8091/AttestNamespace", json=payload)
+print(resp.json())  # {"ok": true, "trust_tier": "verified", ...}
+```
+
+---
+
 ## Anti-Spam
 
 ### Stake Check
@@ -314,3 +433,7 @@ All subnet-wide constants are in `engram/config.py`:
 | `MAX_TEXT_CHARS` | 8192 | Maximum text length for ingest |
 | `MAX_METADATA_BYTES` | 4096 | Maximum metadata size (JSON) |
 | `SPEC_VERSION` | 100 | Bumped on any breaking protocol change |
+| `TRUST_TIER_SOVEREIGN` | 1000.0 | TAO stake threshold for sovereign tier |
+| `TRUST_TIER_VERIFIED` | 100.0 | TAO stake threshold for verified tier |
+| `TRUST_TIER_COMMUNITY` | 1.0 | TAO stake threshold for community tier |
+| `ATTESTATION_STAKE_REFRESH_SECS` | 600 | How often to refresh owner stake from metagraph |

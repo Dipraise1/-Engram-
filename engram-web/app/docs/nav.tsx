@@ -20,6 +20,7 @@ const NAV = [
     items: [
       { href: "/docs/sdk", label: "EngramClient" },
       { href: "/docs/namespaces", label: "Private Namespaces 🔒" },
+      { href: "/docs/attestation", label: "Namespace Attestation ✦" },
       { href: "/docs/sdk-langchain", label: "LangChain" },
       { href: "/docs/sdk-llama", label: "LlamaIndex" },
       { href: "/docs/sdk-errors", label: "Exceptions" },
@@ -52,6 +53,7 @@ const SEARCH_INDEX = [
   { title: "Memory AI", href: "/docs/memory-ai", desc: "Permanent per-user AI memory — how it works and how to build it" },
   { title: "EngramClient", href: "/docs/sdk", desc: "Python SDK — ingest, query, batch, auto-discovery" },
   { title: "Private Namespaces", href: "/docs/namespaces", desc: "Encrypted, access-controlled private collections" },
+  { title: "Namespace Attestation", href: "/docs/attestation", desc: "On-chain trust tiers — link a namespace to your TAO stake" },
   { title: "LangChain Integration", href: "/docs/sdk-langchain", desc: "Use Engram as a LangChain VectorStore" },
   { title: "LlamaIndex Integration", href: "/docs/sdk-llama", desc: "Use Engram with LlamaIndex" },
   { title: "CLI Reference", href: "/docs/cli", desc: "engram init, ingest, query, status — all commands" },
