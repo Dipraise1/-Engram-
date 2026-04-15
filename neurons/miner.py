@@ -887,7 +887,7 @@ async def run() -> None:
     app.router.add_get("/wallet-stats",             handle_wallet_stats)
     app.router.add_get("/wallet-stats/{hotkey}",    handle_wallet_stats)
 
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(app, keepalive_timeout=15)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()
     logger.success(f"Miner HTTP server live on 0.0.0.0:{port}")
@@ -905,8 +905,9 @@ async def run() -> None:
     loop = asyncio.get_event_loop()
     try:
         while True:
-            await asyncio.sleep(60)
-            # Run blocking chain I/O in a thread so the HTTP event loop stays live
+            # Sync every 5 minutes — metagraph.sync() holds the GIL while processing
+            # numpy arrays; syncing too frequently starves the HTTP event loop
+            await asyncio.sleep(300)
             await loop.run_in_executor(
                 None, lambda: metagraph.sync(subtensor=subtensor)
             )
