@@ -892,17 +892,18 @@ async def run() -> None:
     await web.TCPSite(runner, "0.0.0.0", port).start()
     logger.success(f"Miner HTTP server live on 0.0.0.0:{port}")
 
-    # ── Register axon on-chain ────────────────────────────────────────────────
+    # ── Register axon on-chain (non-blocking) ────────────────────────────────
     # bt.Axon is used only for chain registration; we serve JSON ourselves.
+    # Run in executor so the HTTP server stays responsive during chain I/O.
+    loop = asyncio.get_event_loop()
     try:
         axon = bt.Axon(wallet=wallet, port=port, ip=external_ip, external_ip=external_ip)
-        subtensor.serve_axon(netuid=netuid, axon=axon)
+        await loop.run_in_executor(
+            None, lambda: subtensor.serve_axon(netuid=netuid, axon=axon)
+        )
         logger.info(f"Axon registered on-chain | {external_ip}:{port}")
     except Exception as exc:
         logger.warning(f"Chain registration skipped: {exc}")
-
-    # ── Main loop ─────────────────────────────────────────────────────────────
-    loop = asyncio.get_event_loop()
     try:
         while True:
             # Sync every 5 minutes — metagraph.sync() holds the GIL while processing
