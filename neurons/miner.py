@@ -796,9 +796,9 @@ async def run() -> None:
         uptime_pct = round(
             min(1.0, (time.time() - _miner_start_ts) / 86400), 4
         )  # fraction of last 24h this process has been up
-        # Best-effort block height — non-blocking
+        # Block height from cached metagraph — never blocks the event loop
         try:
-            block = subtensor.get_current_block()
+            block = int(metagraph.block.item())
         except Exception:
             block = None
         # Best-effort avg score: prefer on-chain incentive, fall back to proof_rate
