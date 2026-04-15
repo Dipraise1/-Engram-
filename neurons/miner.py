@@ -902,10 +902,14 @@ async def run() -> None:
         logger.warning(f"Chain registration skipped: {exc}")
 
     # ── Main loop ─────────────────────────────────────────────────────────────
+    loop = asyncio.get_event_loop()
     try:
         while True:
             await asyncio.sleep(60)
-            metagraph.sync(subtensor=subtensor)
+            # Run blocking chain I/O in a thread so the HTTP event loop stays live
+            await loop.run_in_executor(
+                None, lambda: metagraph.sync(subtensor=subtensor)
+            )
             router.sync_from_metagraph(
                 axons=metagraph.axons, uids=metagraph.uids.tolist()
             )
