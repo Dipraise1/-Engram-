@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { uploadToArweave, contentCid } from "@/lib/arweave";
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string; numpages: number }>;
 
@@ -39,13 +41,8 @@ async function describeImageWithGrok(base64: string, mimeType: string): Promise<
     signal: AbortSignal.timeout(30000),
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Grok vision error ${res.status}: ${err.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  if (!res.ok) throw new Error(`Grok vision error ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return (await res.json()).choices?.[0]?.message?.content ?? "";
 }
 
 async function ingestText(text: string, metadata: Record<string, string>): Promise<string> {
@@ -86,39 +83,96 @@ export async function POST(req: Request) {
       const text = parsed.text.replace(/\s+/g, " ").trim();
 
       if (!text) {
-        return NextResponse.json({ error: "PDF appears to be empty or image-only — try the image tab instead." }, { status: 422 });
+        return NextResponse.json(
+          { error: "PDF appears to be empty or image-only — try the image tab instead." },
+          { status: 422 }
+        );
       }
 
-      const pages = parsed.numpages;
-      // Chunk large PDFs: ingest first 8192 chars (one chunk for now)
+      // Upload PDF to Arweave for permanent retrieval
+      let arweave_tx_id: string | null = null;
+      let arweave_url: string | null = null;
+      try {
+        const upload = await uploadToArweave(buffer, "application/pdf", {
+          "File-Name": name,
+          "Content-Source": "engram-playground",
+        });
+        arweave_tx_id = upload.tx_id;
+        arweave_url = upload.url;
+      } catch (e) {
+        // Arweave upload failure is non-fatal — text still gets stored in Engram
+        console.warn("Arweave upload failed for PDF:", e);
+      }
+
       const cid = await ingestText(text, {
         source: name,
         type: "pdf",
-        pages: String(pages),
+        pages: String(parsed.numpages),
         text: text.slice(0, 500),
+        ...(arweave_tx_id ? { arweave_tx_id, arweave_url: arweave_url! } : {}),
       });
 
-      return NextResponse.json({ cid, pages, chars: text.length, type: "pdf" });
+      return NextResponse.json({
+        cid,
+        pages: parsed.numpages,
+        chars: text.length,
+        type: "pdf",
+        arweave_tx_id,
+        arweave_url,
+      });
     }
 
     // ── Image ─────────────────────────────────────────────────────────────────
     if (mime.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(name)) {
-      const base64 = buffer.toString("base64");
       const effectiveMime = mime || "image/png";
+      const base64 = buffer.toString("base64");
 
-      const description = await describeImageWithGrok(base64, effectiveMime);
+      // Run Grok vision + Arweave upload in parallel
+      const [description, arweaveResult] = await Promise.allSettled([
+        describeImageWithGrok(base64, effectiveMime),
+        uploadToArweave(buffer, effectiveMime, {
+          "File-Name": name,
+          "Content-Source": "engram-playground",
+          "Content-Hash": contentCid(buffer),
+        }),
+      ]);
 
-      if (!description) {
-        return NextResponse.json({ error: "Image description came back empty." }, { status: 422 });
+      if (description.status === "rejected") {
+        throw new Error(description.reason?.message ?? "Image description failed");
       }
 
-      const cid = await ingestText(description, {
+      const desc = description.value;
+      const upload = arweaveResult.status === "fulfilled" ? arweaveResult.value : null;
+
+      if (arweaveResult.status === "rejected") {
+        console.warn("Arweave upload failed:", arweaveResult.reason);
+      }
+
+      // Generate thumbnail: store first 2KB of base64 as a data-URL preview
+      // (keeps miner metadata lean — ~2KB instead of full image)
+      const thumbnail = `data:${effectiveMime};base64,${base64.slice(0, 2048)}`;
+
+      const cid = await ingestText(desc, {
         source: name,
         type: "image",
-        text: description.slice(0, 500),
+        text: desc.slice(0, 500),
+        content_cid: contentCid(buffer),
+        thumbnail,
+        ...(upload ? {
+          arweave_tx_id: upload.tx_id,
+          arweave_url: upload.url,
+        } : {}),
       });
 
-      return NextResponse.json({ cid, description: description.slice(0, 300), type: "image" });
+      return NextResponse.json({
+        cid,
+        description: desc.slice(0, 300),
+        type: "image",
+        content_cid: contentCid(buffer),
+        arweave_tx_id: upload?.tx_id ?? null,
+        arweave_url: upload?.url ?? null,
+        size: buffer.length,
+      });
     }
 
     return NextResponse.json(
@@ -127,7 +181,7 @@ export async function POST(req: Request) {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("connect") || msg.includes("fetch") || msg.includes("timeout")) {
+    if (msg.includes("connect") || msg.includes("fetch") || msg.includes("timeout") || msg.includes("unreachable")) {
       return NextResponse.json({ error: "Miner unreachable — is it running?" }, { status: 503 });
     }
     return NextResponse.json({ error: msg }, { status: 500 });

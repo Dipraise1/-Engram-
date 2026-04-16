@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@types/pdf-parse": "^1.1.5",
+    "arweave": "^1.15.7",
     "clsx": "^2.1.1",
     "framer-motion": "^11.3.19",
     "lucide-react": "^0.416.0",
