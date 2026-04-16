@@ -30,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-NETUID = int(os.getenv("NETUID", "42"))
+NETUID = int(os.getenv("NETUID", "450"))
 NETWORK = os.getenv("SUBTENSOR_NETWORK", "test")
 ENDPOINT = os.getenv("SUBTENSOR_ENDPOINT", "")
 
@@ -51,7 +51,7 @@ def get_metagraph():
         import bittensor as bt
 
         kwargs = {"network": ENDPOINT} if ENDPOINT else {"network": NETWORK}
-        subtensor = bt.subtensor(**kwargs)
+        subtensor = bt.Subtensor(**kwargs)
         meta = subtensor.metagraph(netuid=NETUID)
 
         _meta_cache = {
@@ -74,7 +74,7 @@ def get_stats():
         meta = data["meta"]
 
         n_miners = int((meta.S > 0).sum())
-        avg_score = float(meta.W.mean().item()) if meta.W.numel() > 0 else 0.0
+        avg_score = float(meta.W.mean()) if meta.W.size > 0 else 0.0
 
         return {
             "miners": n_miners,
@@ -101,7 +101,7 @@ def get_miners():
         miners = []
         uids = meta.uids.tolist()
         stakes = meta.S.tolist()
-        scores = meta.W.mean(dim=0).tolist() if meta.W.dim() == 2 else [0.0] * len(uids)
+        scores = meta.W.mean(axis=0).tolist() if meta.W.ndim == 2 else [0.0] * len(uids)
         axons = meta.axons
 
         for i, uid in enumerate(uids):

@@ -19,3 +19,4 @@ data/
 .DS_Store
 *.zip
 tsconfig.tsbuildinfo
+.vercel

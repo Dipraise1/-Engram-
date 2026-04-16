@@ -24,6 +24,8 @@ import {
   Menu,
   X,
   ExternalLink,
+  Download,
+  Clock,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -424,6 +426,88 @@ function ShareButton({ messages }: { messages: Message[] }) {
   );
 }
 
+// ── Export button ──────────────────────────────────────────────────────────────
+
+function ExportButton({ messages, convTitle }: { messages: Message[]; convTitle: string }) {
+  const [open, setOpen] = useState(false);
+
+  function exportMarkdown() {
+    const lines: string[] = [`# ${convTitle}`, "", `*Exported from Engram Memory · ${new Date().toLocaleString()}*`, ""];
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        lines.push(`**You:** ${msg.content}`);
+      } else {
+        lines.push(`**Engram AI:** ${msg.content}`);
+      }
+      lines.push("");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${convTitle.slice(0, 40).replace(/[^a-z0-9]/gi, "_")}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setOpen(false);
+  }
+
+  function exportJson() {
+    const data = {
+      title: convTitle,
+      exported_at: new Date().toISOString(),
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        ts: m.ts,
+        storedCid: m.storedCid,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${convTitle.slice(0, 40).replace(/[^a-z0-9]/gi, "_")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={messages.length === 0}
+        title="Export conversation"
+        className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors px-2 py-2 rounded-lg hover:bg-white/5 touch-manipulation"
+      >
+        <Download className="w-3.5 h-3.5" />
+        <span className="hidden sm:inline">Export</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-20 bg-[#0f0d14] border border-white/15 rounded-xl shadow-2xl overflow-hidden min-w-[140px]">
+            <button
+              onClick={exportMarkdown}
+              className="flex items-center gap-2 w-full px-4 py-2.5 text-xs text-white/70 hover:text-white hover:bg-white/5 transition-colors text-left"
+            >
+              <span className="font-mono text-[10px] text-fuchsia-400">.md</span>
+              Markdown
+            </button>
+            <button
+              onClick={exportJson}
+              className="flex items-center gap-2 w-full px-4 py-2.5 text-xs text-white/70 hover:text-white hover:bg-white/5 transition-colors text-left"
+            >
+              <span className="font-mono text-[10px] text-fuchsia-400">.json</span>
+              JSON
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Read-only view banner ──────────────────────────────────────────────────────
 
 function ReadOnlyBanner() {
@@ -523,6 +607,37 @@ function ConversationSidebar({
   );
 }
 
+// ── Rate limit banner ──────────────────────────────────────────────────────────
+
+function RateLimitBanner({ resetAt, onExpired }: { resetAt: number; onExpired: () => void }) {
+  const [remaining, setRemaining] = useState<string>("");
+
+  useEffect(() => {
+    function tick() {
+      const diff = Math.max(0, resetAt - Date.now());
+      if (diff === 0) { onExpired(); return; }
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setRemaining(`${m}:${String(s).padStart(2, "0")}`);
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [resetAt, onExpired]);
+
+  return (
+    <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 max-w-[88%]">
+      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+      <div className="text-sm">
+        <span className="text-amber-300 font-medium">Rate limit reached</span>
+        <span className="text-amber-400/70"> — max 30 messages/hour. </span>
+        <span className="text-amber-300 font-mono">{remaining}</span>
+        <span className="text-amber-400/70"> until reset.</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Inner page (needs useSearchParams, wrapped in Suspense) ───────────────────
 
 function MemoryPageInner() {
@@ -540,6 +655,7 @@ function MemoryPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [noApiKey, setNoApiKey] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [rateLimitReset, setRateLimitReset] = useState<number | null>(null); // unix ms
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -729,7 +845,9 @@ function MemoryPageInner() {
       }
 
       if (res.status === 429) {
-        setError("Rate limit reached — max 30 messages per hour. Try again later.");
+        const resetAt = Date.now() + 60 * 60 * 1000; // 1 hour from now
+        setRateLimitReset(resetAt);
+        setError(null);
         setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
         setLoading(false);
         return;
@@ -868,6 +986,12 @@ function MemoryPageInner() {
 
           <div className="ml-auto flex items-center gap-1">
             {!readOnly && <ShareButton messages={messages} />}
+            {!readOnly && (
+              <ExportButton
+                messages={messages}
+                convTitle={conversations.find((c) => c.conv_id === activeConvId)?.title ?? "Engram Memory"}
+              />
+            )}
             <span className="text-[11px] bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/25 px-2 py-0.5 rounded-full hidden sm:inline">
               Permanent Memory
             </span>
@@ -948,6 +1072,11 @@ function MemoryPageInner() {
             <TypingIndicator />
           )}
 
+          {/* Rate limit banner */}
+          {rateLimitReset && (
+            <RateLimitBanner resetAt={rateLimitReset} onExpired={() => setRateLimitReset(null)} />
+          )}
+
           {/* Error */}
           {error && !noApiKey && (
             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-sm text-red-400 max-w-[88%]">
@@ -970,20 +1099,20 @@ function MemoryPageInner() {
             <div className="flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-2.5 focus-within:border-fuchsia-500/40 transition-colors">
               <textarea
                 ref={textareaRef}
-                className="flex-1 bg-transparent text-[16px] leading-snug text-white placeholder-white/30 resize-none focus:outline-none min-h-[24px] max-h-[120px]"
-                placeholder="Say something — I'll remember it forever…"
+                className="flex-1 bg-transparent text-[16px] leading-snug text-white placeholder-white/30 resize-none focus:outline-none min-h-[24px] max-h-[120px] disabled:opacity-50"
+                placeholder={rateLimitReset ? "Rate limit reached — please wait…" : "Say something — I'll remember it forever…"}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                disabled={loading}
+                disabled={loading || !!rateLimitReset}
                 autoComplete="off"
                 autoCorrect="on"
                 spellCheck
               />
               <button
                 onClick={sendMessage}
-                disabled={!input.trim() || loading}
+                disabled={!input.trim() || loading || !!rateLimitReset}
                 className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 active:bg-fuchsia-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors touch-manipulation"
                 aria-label="Send"
               >

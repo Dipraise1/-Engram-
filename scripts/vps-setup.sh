@@ -30,7 +30,9 @@ ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp      # SSH
-ufw allow 8091/tcp    # Miner HTTP
+ufw allow 8091/tcp    # Miner 1 HTTP
+ufw allow 8092/tcp    # Miner 2 HTTP
+ufw allow 8093/tcp    # Miner 3 HTTP
 # ufw allow 443/tcp   # Uncomment when you add TLS via nginx
 ufw --force enable
 echo "Firewall rules:"
@@ -75,6 +77,8 @@ cat > /etc/systemd/system/engram-miner.service << 'EOF'
 Description=Engram Miner
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -82,11 +86,76 @@ User=root
 WorkingDirectory=/opt/engram
 EnvironmentFile=/opt/engram/.env.miner
 ExecStart=/opt/engram/.venv/bin/python neurons/miner.py
-Restart=always
-RestartSec=10
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=120
+# Memory guard — cgroup kills this process before the kernel OOMs the whole box
+MemoryMax=1100M
+MemoryHigh=900M
+OOMScoreAdjust=200
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=engram-miner
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/engram-miner2.service << 'EOF'
+[Unit]
+Description=Engram Miner 2
+After=network-online.target engram-miner.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/engram
+EnvironmentFile=/opt/engram/.env.miner2
+# Stagger startup so two miners don't load the embedding model simultaneously
+ExecStartPre=/bin/sleep 30
+ExecStart=/opt/engram/.venv/bin/python neurons/miner.py
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=150
+MemoryMax=1100M
+MemoryHigh=900M
+OOMScoreAdjust=200
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=engram-miner2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/engram-miner3.service << 'EOF'
+[Unit]
+Description=Engram Miner 3
+After=network-online.target engram-miner.service engram-miner2.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/engram
+EnvironmentFile=/opt/engram/.env.miner3
+# Stagger startup — 60s after system boot to let miner1 and miner2 settle
+ExecStartPre=/bin/sleep 60
+ExecStart=/opt/engram/.venv/bin/python neurons/miner.py
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=180
+MemoryMax=1100M
+MemoryHigh=900M
+OOMScoreAdjust=200
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=engram-miner3
 
 [Install]
 WantedBy=multi-user.target
@@ -97,6 +166,8 @@ cat > /etc/systemd/system/engram-validator.service << 'EOF'
 Description=Engram Validator
 After=network-online.target engram-miner.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -104,8 +175,12 @@ User=root
 WorkingDirectory=/opt/engram
 EnvironmentFile=/opt/engram/.env.validator
 ExecStart=/opt/engram/.venv/bin/python neurons/validator.py
-Restart=always
-RestartSec=15
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=120
+MemoryMax=600M
+MemoryHigh=500M
+OOMScoreAdjust=100
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=engram-validator

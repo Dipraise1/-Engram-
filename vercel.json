@@ -1,0 +1,8 @@
+{
+  "experimentalServices": {
+    "api": {
+      "entrypoint": "engram-web/api",
+      "routePrefix": "/"
+    }
+  }
+}
