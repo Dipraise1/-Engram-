@@ -167,7 +167,7 @@ async def run() -> None:
     wallet_name   = os.getenv("WALLET_NAME", "default")
     wallet_hotkey = os.getenv("WALLET_HOTKEY", "default")
     network       = os.getenv("SUBTENSOR_ENDPOINT") or os.getenv("SUBTENSOR_NETWORK", "test")
-    netuid        = int(os.getenv("NETUID", "99"))
+    netuid        = int(os.getenv("NETUID", "450"))
     gt_path       = os.getenv("GROUND_TRUTH_PATH", "./data/ground_truth.jsonl")
     # Fallback port used when metagraph axon.port is 0 (serve_axon not yet updated on-chain).
     # Useful during local dev when the tx rate limit hasn't elapsed.
@@ -179,8 +179,24 @@ async def run() -> None:
     # ── Bittensor setup ───────────────────────────────────────────────────────
     wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
     _keypair = wallet.hotkey  # used to sign all outgoing miner requests
-    subtensor = bt.Subtensor(network=network)
-    metagraph = subtensor.metagraph(netuid=netuid)
+
+    subtensor = None
+    for attempt in range(1, 6):
+        try:
+            subtensor = bt.Subtensor(network=network)
+            break
+        except Exception as exc:
+            wait = attempt * 10
+            logger.warning(f"Subtensor connect failed (attempt {attempt}/5): {exc} — retrying in {wait}s")
+            await asyncio.sleep(wait)
+    if subtensor is None:
+        logger.warning("Could not connect to subtensor after 5 attempts — running chain-less")
+
+    try:
+        metagraph = subtensor.metagraph(netuid=netuid) if subtensor else None
+    except Exception as exc:
+        logger.warning(f"metagraph() failed at startup: {exc} — starting chain-less")
+        metagraph = None
 
     # ── Components ────────────────────────────────────────────────────────────
     ground_truth = GroundTruthManager(path=gt_path)
@@ -193,7 +209,8 @@ async def run() -> None:
     # ── DHT + Replication tracking ────────────────────────────────────────────
     local_peer = Peer(uid=0, hotkey=wallet.hotkey.ss58_address)
     router = DHTRouter(local_peer=local_peer)
-    router.sync_from_metagraph(axons=metagraph.axons, uids=metagraph.uids.tolist())
+    if metagraph is not None:
+        router.sync_from_metagraph(axons=metagraph.axons, uids=metagraph.uids.tolist())
     replication_mgr = ReplicationManager(router=router)
     # Pre-register all ground-truth CIDs
     for cid in ground_truth.all_cids():
@@ -211,7 +228,31 @@ async def run() -> None:
     try:
         while True:
             now = time.time()
-            metagraph.sync(subtensor=subtensor)
+
+            # ── Reconnect if chain-less ───────────────────────────────────────
+            if subtensor is None:
+                try:
+                    subtensor = bt.Subtensor(network=network)
+                    logger.info("Reconnected to subtensor")
+                except Exception as exc:
+                    logger.warning(f"Subtensor reconnect failed: {exc}")
+
+            if metagraph is None and subtensor is not None:
+                try:
+                    metagraph = subtensor.metagraph(netuid=netuid)
+                    router.sync_from_metagraph(axons=metagraph.axons, uids=metagraph.uids.tolist())
+                    reward_manager.subtensor = subtensor
+                except Exception as exc:
+                    logger.warning(f"metagraph init failed: {exc}")
+
+            if metagraph is None:
+                await asyncio.sleep(30)
+                continue
+
+            try:
+                metagraph.sync(subtensor=subtensor)
+            except Exception as exc:
+                logger.warning(f"metagraph.sync failed: {exc}")
             axons = metagraph.axons
             uids = metagraph.uids.tolist()
             router.sync_from_metagraph(axons=axons, uids=uids)
