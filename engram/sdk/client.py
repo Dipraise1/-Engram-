@@ -249,13 +249,17 @@ class EngramClient:
         self,
         text: str,
         top_k: int = 10,
+        filter: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Semantic search over the miner's stored embeddings.
 
         Args:
-            text:  Query text to search for.
-            top_k: Maximum number of results to return.
+            text:   Query text to search for.
+            top_k:  Maximum number of results to return.
+            filter: Optional metadata filter — only results whose metadata
+                    contains ALL specified key/value pairs are returned.
+                    e.g. ``filter={"user_id": "u_123", "type": "image"}``
 
         Returns:
             List of result dicts, each with keys: "cid", "score", "metadata".
@@ -276,6 +280,9 @@ class EngramClient:
             }
         else:
             payload = {"query_text": text, "top_k": top_k}
+
+        if filter:
+            payload["filter"] = filter
 
         data = self._post("QuerySynapse", payload)
 
@@ -551,6 +558,273 @@ class EngramClient:
             "content_cid": content_cid,
             "filename": filename,
         }
+
+    def get(self, cid: str) -> dict[str, Any]:
+        """
+        Retrieve the metadata for a stored memory by CID.
+
+        Args:
+            cid: The content identifier returned by a previous ingest call.
+
+        Returns:
+            dict with keys ``cid`` and ``metadata``.
+
+        Raises:
+            MinerOfflineError: Miner is unreachable.
+            KeyError: CID not found on this miner (404).
+
+        Example::
+
+            record = client.get("v1::a3f2b1...")
+            print(record["metadata"]["text"])   # stored text snippet
+            print(record["metadata"]["type"])   # "image", "pdf", or absent
+        """
+        import urllib.parse
+        result = self._get(f"retrieve/{urllib.parse.quote(cid, safe='')}")
+        if result.get("error"):
+            raise KeyError(f"CID not found: {cid}")
+        return result
+
+    def delete(self, cid: str) -> bool:
+        """
+        Permanently delete a stored memory by CID.
+
+        Args:
+            cid: The content identifier to delete.
+
+        Returns:
+            True if deleted, False if not found.
+
+        Raises:
+            MinerOfflineError: Miner is unreachable.
+
+        Example::
+
+            deleted = client.delete("v1::a3f2b1...")
+            print(deleted)  # True
+        """
+        import urllib.parse
+        url = f"{self.miner_url}/retrieve/{urllib.parse.quote(cid, safe='')}"
+        try:
+            req = urllib.request.Request(url, method="DELETE")
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read())
+                return data.get("deleted", False)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise EngramError(f"Delete failed: {exc}") from exc
+        except (ConnectionRefusedError, socket.timeout) as exc:
+            raise MinerOfflineError(url, exc) from exc
+        except urllib.error.URLError as exc:
+            raise EngramError(f"Delete request failed: {exc}") from exc
+
+    def list(
+        self,
+        filter: dict[str, str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """
+        List stored memories, optionally filtered by metadata.
+
+        All filter key/value pairs must match (AND semantics).
+        Values are compared as strings.
+
+        Args:
+            filter: Metadata key/value pairs to match, e.g. ``{"user_id": "u_123"}``.
+            limit:  Max records to return (default 50, max 200).
+            offset: Skip N records for pagination (default 0).
+
+        Returns:
+            List of dicts, each with ``cid`` and ``metadata`` keys.
+
+        Example::
+
+            # All memories for a specific user
+            records = client.list(filter={"user_id": "u_123"})
+            for r in records:
+                print(r["cid"], r["metadata"].get("type"))
+
+            # Paginate
+            page2 = client.list(limit=50, offset=50)
+        """
+        payload: dict[str, Any] = {"limit": limit, "offset": offset}
+        if filter:
+            payload["filter"] = filter
+        if self.namespace:
+            payload["namespace"] = self.namespace
+        data = self._post("list", payload)
+        return data.get("records") or []
+
+    def ingest_url(
+        self,
+        url: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Fetch a URL, extract its text, and store it as a memory.
+
+        Uses only stdlib (``urllib``, ``html.parser``) — no extra dependencies.
+
+        Args:
+            url:      The URL to fetch and store.
+            metadata: Optional extra metadata. ``source`` defaults to the URL.
+
+        Returns:
+            dict with keys ``cid``, ``url``, ``title``, ``chars``.
+
+        Raises:
+            MinerOfflineError: Miner is unreachable.
+            IngestError: Miner rejected the request.
+            RuntimeError: URL fetch failed or page has no text content.
+
+        Example::
+
+            result = client.ingest_url("https://arxiv.org/abs/1706.03762")
+            print(result["cid"])    # v1::...
+            print(result["title"])  # "Attention Is All You Need"
+        """
+        import html.parser
+        import urllib.request as _req
+
+        class _TextExtractor(html.parser.HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.text_parts: list[str] = []
+                self.title: str = ""
+                self._in_title = False
+                self._skip_tags = {"script", "style", "nav", "footer", "header"}
+                self._skip_depth = 0
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "title":
+                    self._in_title = True
+                if tag in self._skip_tags:
+                    self._skip_depth += 1
+
+            def handle_endtag(self, tag):
+                if tag == "title":
+                    self._in_title = False
+                if tag in self._skip_tags and self._skip_depth > 0:
+                    self._skip_depth -= 1
+
+            def handle_data(self, data):
+                if self._in_title:
+                    self.title += data
+                elif self._skip_depth == 0:
+                    stripped = data.strip()
+                    if stripped:
+                        self.text_parts.append(stripped)
+
+        try:
+            request = _req.Request(
+                url,
+                headers={"User-Agent": "EngramBot/1.0 (semantic-memory-indexer)"},
+            )
+            with _req.urlopen(request, timeout=15) as resp:
+                content_type = resp.headers.get("Content-Type", "")
+                raw = resp.read()
+        except Exception as exc:
+            raise RuntimeError(f"Failed to fetch {url}: {exc}") from exc
+
+        if "text/html" not in content_type and "text/plain" not in content_type:
+            raise RuntimeError(
+                f"URL returned {content_type!r} — only text/html and text/plain are supported. "
+                "For PDFs use ingest_pdf(), for images use ingest_image()."
+            )
+
+        charset = "utf-8"
+        for part in content_type.split(";"):
+            if "charset=" in part:
+                charset = part.split("=", 1)[1].strip()
+                break
+
+        html_text = raw.decode(charset, errors="replace")
+
+        if "text/plain" in content_type:
+            text = " ".join(html_text.split())
+            title = url
+        else:
+            parser = _TextExtractor()
+            parser.feed(html_text)
+            text = " ".join(parser.text_parts)
+            title = parser.title.strip() or url
+
+        text = " ".join(text.split())   # normalise whitespace
+        if not text:
+            raise RuntimeError(f"No text content found at {url}")
+
+        MAX_CHARS = 8192
+        meta: dict[str, Any] = {
+            "source": url,
+            "type": "url",
+            "title": title[:256],
+            "text": text[:500],
+            **(metadata or {}),
+        }
+        cid = self.ingest(text[:MAX_CHARS], metadata=meta)
+
+        return {"cid": cid, "url": url, "title": title, "chars": len(text)}
+
+    def ingest_conversation(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[str]:
+        """
+        Store a conversation (list of messages) as individual memories.
+
+        Each message becomes its own CID, tagged with ``role``, ``session``,
+        and ``ts`` (Unix timestamp) metadata so it can be filtered and
+        retrieved later.
+
+        Args:
+            messages:   List of ``{"role": "user"|"assistant", "content": "..."}`` dicts.
+            session_id: Optional session/conversation identifier stored as ``session`` metadata.
+            metadata:   Optional extra metadata applied to every message.
+
+        Returns:
+            List of CIDs, one per message (in order).
+
+        Example::
+
+            cids = client.ingest_conversation(
+                [
+                    {"role": "user",      "content": "What is Bittensor?"},
+                    {"role": "assistant", "content": "Bittensor is a decentralised ML network..."},
+                ],
+                session_id="conv_abc123",
+            )
+            # Later — retrieve context for this session
+            results = client.query(
+                "what did we discuss about Bittensor?",
+                filter={"session": "conv_abc123"},
+            )
+        """
+        import time as _time
+
+        cids: list[str] = []
+        for msg in messages:
+            role    = str(msg.get("role", "user"))
+            content = str(msg.get("content", "")).strip()
+            if not content:
+                continue
+
+            meta: dict[str, Any] = {
+                "role": role,
+                "ts":   str(int(_time.time())),
+                "text": content[:500],
+                **({"session": session_id} if session_id else {}),
+                **(metadata or {}),
+            }
+            cid = self.ingest(content, metadata=meta)
+            cids.append(cid)
+
+        return cids
 
     def health(self) -> dict[str, Any]:
         """

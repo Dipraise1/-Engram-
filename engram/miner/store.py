@@ -56,6 +56,14 @@ class VectorStore(ABC):
     def delete(self, cid: str) -> bool: ...
     @abstractmethod
     def count(self) -> int: ...
+    @abstractmethod
+    def list(
+        self,
+        filter: dict[str, str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        namespace: str = _PUBLIC_NS,
+    ) -> list[dict]: ...
 
 
 # ── Qdrant backend ────────────────────────────────────────────────────────────
@@ -186,6 +194,38 @@ class QdrantStore(VectorStore):
         info = self._client.get_collection(self._collection)
         return info.points_count or 0
 
+    def list(
+        self,
+        filter: dict[str, str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        namespace: str = _PUBLIC_NS,
+    ) -> list[dict]:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+        qdrant_filter = None
+        conditions = []
+        if namespace != _PUBLIC_NS:
+            conditions.append(FieldCondition(key="namespace", match=MatchValue(value=namespace)))
+        if filter:
+            for k, v in filter.items():
+                conditions.append(FieldCondition(key=k, match=MatchValue(value=str(v))))
+        if conditions:
+            qdrant_filter = Filter(must=conditions)
+
+        results, _ = self._client.scroll(
+            collection_name=self._collection,
+            scroll_filter=qdrant_filter,
+            limit=limit,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return [
+            {"cid": r.payload.get("cid", ""), "metadata": r.payload.get("metadata", {})}
+            for r in results
+        ]
+
 
 # ── FAISS backend ─────────────────────────────────────────────────────────────
 
@@ -306,6 +346,31 @@ class FAISSStore(VectorStore):
         # Return logical count (excludes tombstoned vectors) rather than
         # FAISS ntotal, which includes physically-present but deleted slots.
         return len(self._vectors)
+
+    def list(
+        self,
+        filter: dict[str, str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        namespace: str = _PUBLIC_NS,
+    ) -> list[dict]:
+        """Return a paginated, optionally filtered list of stored records.
+
+        filter is matched against metadata fields — all key/value pairs must match
+        (AND semantics). Values are compared as strings.
+        """
+        results = []
+        for cid, meta in self._metadata.items():
+            if self._namespaces.get(cid, _PUBLIC_NS) != namespace:
+                continue
+            if filter:
+                if not all(str(meta.get(k)) == str(v) for k, v in filter.items()):
+                    continue
+            results.append({"cid": cid, "metadata": meta})
+
+        # Stable sort by insertion order approximated via cid_to_id
+        results.sort(key=lambda r: self._cid_to_id.get(r["cid"], 0))
+        return results[offset: offset + limit]
 
     def save(self, path: str | None = None) -> None:
         import faiss

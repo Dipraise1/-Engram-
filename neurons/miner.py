@@ -537,8 +537,21 @@ async def run() -> None:
             _latency_window.append(elapsed_ms)
             if len(_latency_window) > 100:
                 _latency_window.pop(0)
+            # ── Metadata filter (post-ANN) ───────────────────────────────────
+            # Fetch more than top_k in the ANN step (handled in store.search)
+            # then filter here so developers can scope results by metadata fields.
+            meta_filter = body.get("filter") or None
+            filtered_results = result.results or []
+            if meta_filter and isinstance(meta_filter, dict):
+                filtered_results = [
+                    r for r in filtered_results
+                    if all(
+                        str(r.get("metadata", {}).get(k)) == str(v)
+                        for k, v in meta_filter.items()
+                    )
+                ]
             return web.json_response({
-                "results"   : result.results or [],
+                "results"   : filtered_results,
                 "latency_ms": result.latency_ms,
                 "error"     : result.error,
             })
@@ -558,6 +571,43 @@ async def run() -> None:
         return web.json_response({
             "cid":      record.cid,
             "metadata": record.metadata,
+        })
+
+    async def handle_delete(req: web.Request) -> web.Response:
+        """DELETE /retrieve/{cid} — permanently remove a stored memory."""
+        cid = req.match_info.get("cid", "").strip()
+        if not cid:
+            return web.json_response({"error": "missing cid"}, status=400)
+        deleted = store.delete(cid)
+        if not deleted:
+            return web.json_response({"error": "not found"}, status=404)
+        replication_mgr.unregister(cid) if hasattr(replication_mgr, "unregister") else None
+        METRICS.vectors_stored.set(store.count())
+        return web.json_response({"deleted": True, "cid": cid})
+
+    async def handle_list(req: web.Request) -> web.Response:
+        """POST /list — paginate and filter stored memories.
+
+        Body (all optional):
+            filter   dict[str, str]  metadata key/value pairs (AND match)
+            limit    int             max results (default 50, max 200)
+            offset   int             skip N records (default 0)
+            namespace str            namespace to list (default public)
+        """
+        try:
+            body = await req.json()
+        except Exception:
+            body = {}
+        filter_   = body.get("filter") or None
+        limit     = min(int(body.get("limit", 50)), 200)
+        offset    = max(int(body.get("offset", 0)), 0)
+        namespace = body.get("namespace") or "__public__"
+        records   = store.list(filter=filter_, limit=limit, offset=offset, namespace=namespace)
+        return web.json_response({
+            "records": records,
+            "count":   len(records),
+            "offset":  offset,
+            "limit":   limit,
         })
 
     async def handle_challenge(req: web.Request) -> web.Response:
@@ -905,6 +955,8 @@ async def run() -> None:
     app.router.add_patch("/conversations/{conv_id}", handle_conversations_patch)
     app.router.add_delete("/conversations/{conv_id}", handle_conversations_delete)
     app.router.add_get("/retrieve/{cid}",           handle_retrieve)
+    app.router.add_delete("/retrieve/{cid}",        handle_delete)
+    app.router.add_post("/list",                    handle_list)
     app.router.add_get("/health",                   handle_health)
     app.router.add_get("/stats",                    handle_stats)
     app.router.add_get("/metagraph",                handle_metagraph)
