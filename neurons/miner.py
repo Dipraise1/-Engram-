@@ -239,7 +239,11 @@ async def run() -> None:
     # ── Bittensor setup ───────────────────────────────────────────────────────
     wallet     = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
     subtensor  = bt.Subtensor(network=network)
-    metagraph  = subtensor.metagraph(netuid=netuid)
+    try:
+        metagraph = subtensor.metagraph(netuid=netuid)
+    except Exception as exc:
+        logger.warning(f"Initial metagraph sync failed ({exc}) — starting with empty metagraph, will retry in background")
+        metagraph = bt.metagraph(netuid=netuid, network=network, lite=True, sync=False)
 
     logger.info(f"Wallet: {wallet.hotkey.ss58_address}")
 
