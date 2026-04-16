@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, Plus, Loader2, XCircle, Copy, Check, Code, Link2, Upload, FileText } from "lucide-react";
+import { ArrowLeft, Search, Plus, Loader2, XCircle, Copy, Check, Code, Link2, Upload, FileText, FileImage, FilePen } from "lucide-react";
 
 interface IngestResult {
   cid: string;
@@ -18,14 +18,16 @@ interface QueryResult {
 
 export default function PlaygroundPage() {
   // ── Ingest state ────────────────────────────────────────────────────────────
-  const [ingestTab, setIngestTab] = useState<"text" | "url" | "file">("text");
+  const [ingestTab, setIngestTab] = useState<"text" | "url" | "file" | "pdf" | "image">("text");
   const [ingestText, setIngestText] = useState("");
   const [ingestUrl, setIngestUrl] = useState("");
   const [ingestFilename, setIngestFilename] = useState<string | null>(null);
+  const [ingestFile, setIngestFile] = useState<File | null>(null);
   const [ingestLoading, setIngestLoading] = useState(false);
   const [ingestHistory, setIngestHistory] = useState<IngestResult[]>([]);
   const [ingestError, setIngestError] = useState<string | null>(null);
   const [toastCid, setToastCid] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   // ── Query state ─────────────────────────────────────────────────────────────
   const [queryText, setQueryText] = useState("");
@@ -54,6 +56,29 @@ export default function PlaygroundPage() {
     setIngestError(null);
 
     try {
+      // PDF and Image — send as multipart to /api/subnet/ingest/file
+      if (ingestTab === "pdf" || ingestTab === "image") {
+        if (!ingestFile) { setIngestLoading(false); return; }
+        const form = new FormData();
+        form.append("file", ingestFile);
+        const res = await fetch("/api/subnet/ingest/file", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setIngestError(data.error || "Ingest failed.");
+        } else {
+          const label = ingestTab === "pdf"
+            ? `${ingestFile.name} (${data.pages} pages, ${data.chars} chars)`
+            : ingestFile.name;
+          setIngestHistory((prev) => [{ cid: data.cid, text: label }, ...prev]);
+          setLastIngestText(data.description ?? ingestFile.name);
+          setIngestFile(null);
+          setIngestFilename(null);
+          setImagePreview(null);
+          showToast(data.cid);
+        }
+        return;
+      }
+
       let text = "";
       let source = "playground";
 
@@ -63,7 +88,6 @@ export default function PlaygroundPage() {
       } else if (ingestTab === "url") {
         const url = ingestUrl.trim();
         if (!url) { setIngestLoading(false); return; }
-        // Fetch via a simple proxy approach — fetch the URL server-side via ingest API
         const fetchRes = await fetch(url, { signal: AbortSignal.timeout(10000) });
         if (!fetchRes.ok) throw new Error(`Fetching URL failed (${fetchRes.status})`);
         const ct = fetchRes.headers.get("content-type") ?? "";
@@ -214,12 +238,18 @@ export default function PlaygroundPage() {
           </p>
 
           {/* Tabs */}
-          <div className="flex gap-1 bg-black/30 border border-white/10 rounded-lg p-1">
-            {([["text", "Text", FileText], ["url", "URL", Link2], ["file", "File", Upload]] as const).map(([id, label, Icon]) => (
+          <div className="flex gap-1 bg-black/30 border border-white/10 rounded-lg p-1 flex-wrap">
+            {([
+              ["text", "Text", FileText],
+              ["url", "URL", Link2],
+              ["file", "File", Upload],
+              ["pdf", "PDF", FilePen],
+              ["image", "Image", FileImage],
+            ] as const).map(([id, label, Icon]) => (
               <button
                 key={id}
-                onClick={() => setIngestTab(id)}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors flex-1 justify-center ${
+                onClick={() => { setIngestTab(id); setIngestError(null); }}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors flex-1 justify-center min-w-[52px] ${
                   ingestTab === id
                     ? "bg-purple-600 text-white"
                     : "text-white/40 hover:text-white/70"
@@ -258,7 +288,7 @@ export default function PlaygroundPage() {
             </div>
           )}
 
-          {/* File input */}
+          {/* Plain file input */}
           {ingestTab === "file" && (
             <div className="flex flex-col gap-2">
               <label className="flex flex-col items-center gap-2 border border-dashed border-white/20 rounded-xl px-4 py-5 cursor-pointer hover:border-purple-500/40 hover:bg-purple-500/5 transition-colors">
@@ -286,13 +316,87 @@ export default function PlaygroundPage() {
             </div>
           )}
 
+          {/* PDF input */}
+          {ingestTab === "pdf" && (
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col items-center gap-2 border border-dashed border-white/20 rounded-xl px-4 py-5 cursor-pointer hover:border-purple-500/40 hover:bg-purple-500/5 transition-colors">
+                <FilePen className="w-5 h-5 text-white/30" />
+                <span className="text-sm text-white/40">
+                  {ingestFilename ? ingestFilename : "Click to upload a PDF"}
+                </span>
+                <span className="text-xs text-white/20">Text is extracted server-side</span>
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setIngestFile(f);
+                    setIngestFilename(f.name);
+                  }}
+                />
+              </label>
+              {ingestFile && (
+                <p className="text-xs text-white/30">{(ingestFile.size / 1024).toFixed(1)} KB — ready to store</p>
+              )}
+            </div>
+          )}
+
+          {/* Image input */}
+          {ingestTab === "image" && (
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col items-center gap-2 border border-dashed border-white/20 rounded-xl px-4 py-5 cursor-pointer hover:border-purple-500/40 hover:bg-purple-500/5 transition-colors relative overflow-hidden">
+                {imagePreview ? (
+                  <img src={imagePreview} alt="preview" className="max-h-32 rounded-lg object-contain" />
+                ) : (
+                  <>
+                    <FileImage className="w-5 h-5 text-white/30" />
+                    <span className="text-sm text-white/40">Click to upload an image</span>
+                    <span className="text-xs text-white/20">PNG, JPG, WEBP, GIF — described by Grok Vision</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setIngestFile(f);
+                    setIngestFilename(f.name);
+                    const url = URL.createObjectURL(f);
+                    setImagePreview(url);
+                  }}
+                />
+              </label>
+              {ingestFile && !imagePreview && (
+                <p className="text-xs text-white/30">{ingestFilename} ready</p>
+              )}
+              {ingestFile && imagePreview && (
+                <p className="text-xs text-white/30">{ingestFilename} · {(ingestFile.size / 1024).toFixed(1)} KB</p>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <span className="text-xs text-white/30">
-              {ingestTab === "text" ? `${ingestText.length}/8192` : ingestTab === "url" ? "fetches on store" : ingestFilename ? `${ingestText.length}/8192` : ""}
+              {ingestTab === "text" ? `${ingestText.length}/8192`
+                : ingestTab === "url" ? "fetches on store"
+                : ingestTab === "pdf" ? (ingestFile ? `${(ingestFile.size / 1024).toFixed(1)} KB` : "")
+                : ingestTab === "image" ? (ingestFile ? "Grok Vision" : "")
+                : ingestFilename ? `${ingestText.length}/8192` : ""}
             </span>
             <button
               onClick={handleIngest}
-              disabled={ingestLoading || (ingestTab === "text" && !ingestText.trim()) || (ingestTab === "url" && !ingestUrl.trim()) || (ingestTab === "file" && !ingestText.trim())}
+              disabled={
+                ingestLoading ||
+                (ingestTab === "text" && !ingestText.trim()) ||
+                (ingestTab === "url" && !ingestUrl.trim()) ||
+                (ingestTab === "file" && !ingestText.trim()) ||
+                (ingestTab === "pdf" && !ingestFile) ||
+                (ingestTab === "image" && !ingestFile)
+              }
               className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
               {ingestLoading ? (
