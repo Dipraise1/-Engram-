@@ -23,7 +23,8 @@ pip install -e .
 ```python
 from engram.sdk import EngramClient
 
-client = EngramClient("http://127.0.0.1:8091")
+# Connect to the live testnet miner
+client = EngramClient("http://72.62.2.34:8091")
 
 # Store text
 cid = client.ingest("The transformer architecture changed everything.")

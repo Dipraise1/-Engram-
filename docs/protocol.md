@@ -1,6 +1,8 @@
 # Protocol Specification
 
-This document describes the wire protocol, content addressing scheme, storage proof system, and scoring formulas that define the Engram subnet.
+This document describes the wire protocol, content addressing scheme, Arweave blob storage, storage proof system, and scoring formulas that define the Engram subnet.
+
+**Live network:** Bittensor testnet, subnet 450
 
 ---
 
@@ -131,7 +133,43 @@ Storage proof challenge-response. The validator proves the miner actually holds 
 
 ---
 
-## Content Identifier (CID)
+## Content Identifiers
+
+Engram uses two complementary CID schemes:
+
+### Engram CID (semantic address)
+
+Used for search and retrieval within the subnet:
+
+```
+v1::<sha256_hex>
+```
+
+Generated from the embedding + metadata — the semantic fingerprint of the stored content.
+
+### Content CID (raw bytes address)
+
+Used to verify the original binary file is intact:
+
+```
+sha256:<sha256_hex_of_raw_bytes>
+```
+
+Computed by the frontend (`lib/arweave.ts`) when a file is uploaded. Stored as metadata alongside the Engram CID.
+
+### Arweave Transaction ID
+
+When an image or PDF is uploaded via the playground, the original binary is pinned to Arweave. The 43-character base64url transaction ID is stored as `arweave_tx_id` metadata on the Engram record.
+
+```
+Engram CID      → semantic search (embedding similarity)
+Content CID     → integrity check (sha256 of raw bytes)
+Arweave TX ID   → permanent retrieval (arweave.net/<tx_id>)
+```
+
+---
+
+## Engram CID Format
 
 ### Format
 
@@ -415,7 +453,7 @@ All subnet-wide constants are in `engram/config.py`:
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `EMBEDDING_DIM = 384 | Vector dimension (OpenAI all-MiniLM-L6-v2) |
+| `EMBEDDING_DIM` | 384 | Vector dimension (all-MiniLM-L6-v2) |
 | `CANONICAL_MODEL` | `all-MiniLM-L6-v2` | Canonical embedding model |
 | `CANONICAL_MODEL_VERSION` | `v1` | Model epoch string used in CID generation |
 | `REPLICATION_FACTOR` | 3 | Number of miners that store each CID |

@@ -1,23 +1,24 @@
 # Engram
 
-**Decentralized Vector Database on Bittensor**
+**Decentralized AI Memory Layer on Bittensor**
 
-> Permanent, content-addressed semantic memory for AI — no central authority, no single point of failure.
+> Permanent, content-addressed semantic memory for AI — store text, images, and PDFs with cryptographic proofs. No central authority, no AWS, no single point of failure.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
-[![Bittensor](https://img.shields.io/badge/bittensor-subnet-orange.svg)](https://bittensor.com)
-[![Status](https://img.shields.io/badge/status-testnet-yellow.svg)](https://theengram.space)
-[![Docs](https://img.shields.io/badge/docs-theengram.space-blueviolet.svg)](https://theengram.space/docs)
+[![Bittensor](https://img.shields.io/badge/bittensor-subnet%20450-orange.svg)](https://bittensor.com)
+[![Status](https://img.shields.io/badge/status-testnet%20live-green.svg)](https://theengram.space)
+[![Dashboard](https://img.shields.io/badge/dashboard-theengram.space-blueviolet.svg)](https://theengram.space)
 
 ---
 
 ## What is Engram?
 
-Engram applies the IPFS insight to AI memory: every piece of knowledge gets a **content identifier (CID)** derived deterministically from its embedding. The same text always maps to the same CID — regardless of which miner stores it.
+Engram is a Bittensor subnet that turns text, images, and documents into **permanently stored, content-addressed memories**. Every piece of knowledge gets a deterministic CID derived from its embedding — the same content always maps to the same identifier, regardless of which miner stores it.
 
 - **Content-addressed** — `v1::a3f2b1...` uniquely identifies an embedding, not a location
-- **Decentralized** — embeddings are replicated across competing miners on Bittensor
+- **Decentralized** — replicated across competing miners on Bittensor subnet 450
+- **Permanent** — binary files (images, PDFs) pinned to Arweave; text indexed in FAISS HNSW
 - **Incentivized** — miners earn TAO for provably storing and serving vectors
 - **Verifiable** — HMAC challenge-response proofs ensure miners actually hold the data
 
@@ -43,6 +44,21 @@ Engram applies the IPFS insight to AI memory: every piece of knowledge gets a **
 
 ---
 
+## Live Network
+
+| Property | Value |
+|----------|-------|
+| Network | Bittensor Testnet |
+| Subnet UID | **450** |
+| Embedding model | `all-MiniLM-L6-v2` (384d, local) |
+| Vector index | FAISS HNSW |
+| Proof type | HMAC-SHA256 challenge-response |
+| Blob storage | Arweave (pay-once permanent) |
+| Dashboard | [theengram.space](https://theengram.space) |
+| Playground | [theengram.space/playground](https://theengram.space/playground) |
+
+---
+
 ## Quick Start
 
 ### Install
@@ -59,20 +75,12 @@ cd -Engram-
 pip install -e .
 ```
 
-### Configure
-
-```bash
-cp .env.example .env
-# Edit: WALLET_NAME, NETUID, SUBTENSOR_NETWORK
-# Optional: USE_LOCAL_EMBEDDER=true  (no OpenAI key needed)
-```
-
 ### Python SDK
 
 ```python
 from engram.sdk import EngramClient
 
-client = EngramClient("http://127.0.0.1:8091")
+client = EngramClient("http://72.62.2.34:8091")
 
 # Store text — returns a permanent CID
 cid = client.ingest("The transformer architecture changed everything.")
@@ -92,7 +100,6 @@ cids = client.batch_ingest_file("data/corpus.jsonl")
 ```bash
 engram ingest "Some important knowledge"
 engram ingest --file corpus.jsonl
-engram ingest --dir ./docs          # recursive directory ingest
 
 engram query "what is self-attention?"
 
@@ -102,17 +109,41 @@ engram status --live --netuid 450    # live metagraph + miner health
 
 ---
 
+## Storing Files (Playground)
+
+Open [theengram.space/playground](https://theengram.space/playground) to store content from your browser — no wallet or API key needed:
+
+| Tab | What happens |
+|-----|-------------|
+| **Text** | Embedded with all-MiniLM-L6-v2, stored on miners |
+| **Image** | Described by Grok Vision, uploaded to Arweave, embedding stored on miners |
+| **PDF** | Text extracted, uploaded to Arweave, embedding stored on miners |
+
+Every stored item gets a CID you can share. Retrieve it at `theengram.space/cid/<YOUR_CID>`.
+
+### Two-CID Architecture
+
+Images and PDFs get **two identifiers**:
+
+```
+engram_cid   = v1::sha256(embedding + metadata)   ← semantic address for search
+content_cid  = sha256:sha256(raw_bytes)            ← content address for retrieval
+arweave_tx   = <Arweave transaction ID>            ← permanent off-chain blob
+```
+
+---
+
 ## Framework Integrations
 
 ```python
 # LangChain
 from engram.sdk.langchain import EngramVectorStore
-store = EngramVectorStore(miner_url="http://127.0.0.1:8091", embeddings=your_embeddings)
+store = EngramVectorStore(miner_url="http://72.62.2.34:8091", embeddings=your_embeddings)
 retriever = store.as_retriever(search_kwargs={"k": 5})
 
 # LlamaIndex
 from engram.sdk.llama_index import EngramVectorStore
-store = EngramVectorStore(miner_url="http://127.0.0.1:8091")
+store = EngramVectorStore(miner_url="http://72.62.2.34:8091")
 index = VectorStoreIndex.from_documents(
     documents,
     storage_context=StorageContext.from_defaults(vector_store=store)
@@ -133,16 +164,15 @@ btcli subnet register --netuid 450 --wallet.name engram --wallet.hotkey miner --
 
 # Configure
 cp .env.example .env.miner
-# Edit WALLET_NAME, WALLET_HOTKEY, NETUID=450, SUBTENSOR_NETWORK=test
+# Set: WALLET_NAME, WALLET_HOTKEY, NETUID=450, SUBTENSOR_NETWORK=test
 
 # Start
 ENV_FILE=.env.miner python neurons/miner.py
-
-# Seed ground truth vectors so storage proof challenges pass
-python scripts/seed_miner_ground_truth.py --miner-url http://YOUR_IP:8091
 ```
 
-Full setup: [docs/miner.md](docs/miner.md)
+The miner starts even if the testnet RPC is temporarily unavailable — it retries the chain connection in the background and runs chain-less until it reconnects.
+
+Full guide: [docs/miner.md](docs/miner.md)
 
 ---
 
@@ -152,18 +182,16 @@ Full setup: [docs/miner.md](docs/miner.md)
 btcli subnet register --netuid 450 --wallet.name engram --wallet.hotkey validator --subtensor.network test
 
 cp .env.example .env.validator
-# Edit WALLET_NAME, WALLET_HOTKEY, NETUID=450, SUBTENSOR_NETWORK=test
+# Set: WALLET_NAME, WALLET_HOTKEY, NETUID=450, SUBTENSOR_NETWORK=test
 
 ENV_FILE=.env.validator python neurons/validator.py
 ```
 
-Full setup: [docs/validator.md](docs/validator.md)
+Full guide: [docs/validator.md](docs/validator.md)
 
 ---
 
 ## Scoring
-
-Validators score miners every 120 seconds:
 
 ```
 composite_score = 0.50 × recall@10
@@ -171,23 +199,23 @@ composite_score = 0.50 × recall@10
                + 0.20 × proof_success_rate
 ```
 
-Miners with proof success rate below 50% receive weight 0.
+Validators score miners every 120 seconds. Miners with proof success rate below 50% receive weight 0.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                       Bittensor Chain                        │
-│               (metagraph · weight setting · TAO)             │
-└─────────────────────┬──────────────────────┬─────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        Bittensor Chain                           │
+│                (metagraph · weight setting · TAO)                │
+└─────────────────────┬──────────────────────┬─────────────────────┘
                       │                      │
               ┌───────▼──────┐    ┌──────────▼──────┐
               │  Validator   │    │      Miner       │
               │              │    │                  │
-              │ • challenge  │───▶│ • FAISS index    │
-              │ • score      │    │ • embedder       │
+              │ • recall@K   │───▶│ • FAISS HNSW     │
+              │ • challenge  │    │ • embedder       │
               │ • set weights│◀───│ • proof service  │
               └──────────────┘    └──────────┬───────┘
                                              │
@@ -197,6 +225,19 @@ Miners with proof success rate below 50% receive weight 0.
                                    │ • CID generation  │
                                    │ • HMAC proofs     │
                                    └──────────────────┘
+
+              ┌──────────────────────────────────────┐
+              │          engram-web (Next.js)         │
+              │   playground · memory · dashboard     │
+              │            theengram.space            │
+              └──────────────┬───────────────────────┘
+                             │  images / PDFs
+                             ▼
+              ┌──────────────────────────────────────┐
+              │              Arweave                  │
+              │     permanent blob storage            │
+              │    pay-once · publicly verifiable     │
+              └──────────────────────────────────────┘
 ```
 
 ---
@@ -212,8 +253,13 @@ engram/
 │   └── protocol.py      # Synapse types (IngestSynapse, QuerySynapse)
 ├── engram-core/         # Rust core — CID generation + storage proofs
 ├── engram-web/          # Next.js frontend (theengram.space)
+│   ├── app/playground/  # Text / Image / PDF ingest UI
+│   ├── app/memory/      # Memory search + AI chat
+│   ├── app/cid/[id]/    # CID lookup + Arweave proof view
+│   ├── app/api/         # Next.js API routes → miner proxy
+│   └── lib/arweave.ts   # Arweave upload utility
 ├── neurons/             # miner.py, validator.py entry points
-├── scripts/             # Demo, ground truth generation, utilities
+├── scripts/             # Setup, seeding, VPS utilities
 ├── tests/               # pytest suite
 └── docs/                # Architecture, SDK, CLI, protocol reference
 ```
@@ -224,14 +270,12 @@ engram/
 
 | Guide | Description |
 |-------|-------------|
-| [docs/architecture.md](docs/architecture.md) | System design, data flows, component overview |
-| [docs/miner.md](docs/miner.md) | Miner setup, configuration, optimization |
+| [docs/architecture.md](docs/architecture.md) | System design, data flows, Arweave integration |
+| [docs/miner.md](docs/miner.md) | Miner setup, configuration, systemd |
 | [docs/validator.md](docs/validator.md) | Validator setup and scoring loop |
 | [docs/sdk.md](docs/sdk.md) | Python SDK full reference |
 | [docs/cli.md](docs/cli.md) | CLI command reference |
 | [docs/protocol.md](docs/protocol.md) | Wire protocol, CID spec, scoring formulas |
-
-Full web docs: **[theengram.space/docs](https://theengram.space/docs)**
 
 ---
 
@@ -244,26 +288,13 @@ cargo test --manifest-path engram-core/Cargo.toml --no-default-features
 
 ---
 
-## Network
-
-| Property | Value |
-|----------|-------|
-| Network | Bittensor (TAO) |
-| Type | Infrastructure / Storage |
-| Status | Testnet |
-| Subnet UID | 450 (testnet) |
-| Canonical embedding model | `all-MiniLM-L6-v2` (384d, local) |
-| Vector index | FAISS HNSW |
-| Proof type | HMAC-SHA256 challenge-response |
-
----
-
 ## Links
 
 - **Website** — [theengram.space](https://theengram.space)
-- **Docs** — [theengram.space/docs](https://theengram.space/docs)
+- **Playground** — [theengram.space/playground](https://theengram.space/playground)
 - **Dashboard** — [theengram.space/dashboard](https://theengram.space/dashboard)
-- **Miner API** — `http://72.62.2.34:8091/health`
+- **GitHub** — [github.com/Dipraise1/-Engram-](https://github.com/Dipraise1/-Engram-)
+- **Miner health** — `http://72.62.2.34:8091/health`
 
 ---
 
