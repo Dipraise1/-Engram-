@@ -237,15 +237,32 @@ async def run() -> None:
     logger.info(f"Engram Miner v{SUBNET_VERSION} | network={network} | netuid={netuid}")
 
     # ── Bittensor setup ───────────────────────────────────────────────────────
-    wallet     = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
-    subtensor  = bt.Subtensor(network=network)
-    try:
-        metagraph = subtensor.metagraph(netuid=netuid)
-    except Exception as exc:
-        logger.warning(f"Initial metagraph sync failed ({exc}) — starting with empty metagraph, will retry in background")
-        metagraph = bt.metagraph(netuid=netuid, network=network, lite=True, sync=False)
-
+    wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
     logger.info(f"Wallet: {wallet.hotkey.ss58_address}")
+
+    # Retry subtensor connection — testnet RPC is flaky at startup
+    subtensor = None
+    for attempt in range(1, 6):
+        try:
+            subtensor = bt.Subtensor(network=network)
+            break
+        except Exception as exc:
+            wait = attempt * 10
+            logger.warning(f"Subtensor connect failed (attempt {attempt}/5): {exc} — retrying in {wait}s")
+            await asyncio.sleep(wait)
+    if subtensor is None:
+        logger.warning("Could not connect to subtensor after 5 attempts — running chain-less")
+        subtensor = None
+
+    # Sync metagraph if subtensor is available, else start empty
+    if subtensor is not None:
+        try:
+            metagraph = subtensor.metagraph(netuid=netuid)
+        except Exception as exc:
+            logger.warning(f"Initial metagraph sync failed ({exc}) — starting with empty metagraph")
+            metagraph = bt.metagraph(netuid=netuid, network=network, lite=True, sync=False)
+    else:
+        metagraph = bt.metagraph(netuid=netuid, network=network, lite=True, sync=False)
 
     # ── Core components ───────────────────────────────────────────────────────
     store              = build_store(backend)
@@ -309,9 +326,13 @@ async def run() -> None:
     logger.info(f"DHT ready | peers={router.peer_count()} | uid={our_uid}")
 
     # ── Registration check ────────────────────────────────────────────────────
-    if not subtensor.is_hotkey_registered(netuid=netuid, hotkey_ss58=wallet.hotkey.ss58_address):
-        logger.warning("Hotkey not registered — run:")
-        logger.warning(f"  btcli subnet register --netuid {netuid} --wallet.name {wallet_name}")
+    if subtensor is not None:
+        try:
+            if not subtensor.is_hotkey_registered(netuid=netuid, hotkey_ss58=wallet.hotkey.ss58_address):
+                logger.warning("Hotkey not registered — run:")
+                logger.warning(f"  btcli subnet register --netuid {netuid} --wallet.name {wallet_name}")
+        except Exception as exc:
+            logger.warning(f"Registration check failed: {exc}")
 
     # ── Runtime stat counters ─────────────────────────────────────────────────
     _queries_today      = 0
@@ -900,19 +921,27 @@ async def run() -> None:
     # bt.Axon is used only for chain registration; we serve JSON ourselves.
     # Run in executor so the HTTP server stays responsive during chain I/O.
     loop = asyncio.get_event_loop()
-    try:
-        axon = bt.Axon(wallet=wallet, port=port, ip=external_ip, external_ip=external_ip)
-        await loop.run_in_executor(
-            None, lambda: subtensor.serve_axon(netuid=netuid, axon=axon)
-        )
-        logger.info(f"Axon registered on-chain | {external_ip}:{port}")
-    except Exception as exc:
-        logger.warning(f"Chain registration skipped: {exc}")
+    if subtensor is not None:
+        try:
+            axon = bt.Axon(wallet=wallet, port=port, ip=external_ip, external_ip=external_ip)
+            await loop.run_in_executor(
+                None, lambda: subtensor.serve_axon(netuid=netuid, axon=axon)
+            )
+            logger.info(f"Axon registered on-chain | {external_ip}:{port}")
+        except Exception as exc:
+            logger.warning(f"Chain registration skipped: {exc}")
     try:
         while True:
             # Sync every 5 minutes — metagraph.sync() holds the GIL while processing
             # numpy arrays; syncing too frequently starves the HTTP event loop
             await asyncio.sleep(300)
+            if subtensor is None:
+                # Try to reconnect to chain
+                try:
+                    subtensor = bt.Subtensor(network=network)
+                    logger.info("Subtensor reconnected after chain-less start")
+                except Exception:
+                    continue
             await loop.run_in_executor(
                 None, lambda: metagraph.sync(subtensor=subtensor)
             )
