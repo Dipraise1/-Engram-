@@ -4,11 +4,11 @@ import { DocPage, H1, H2, H3, Lead, P, Code, Note, Table, Ic } from "../ui";
 export const metadata: Metadata = {
   title: "EngramClient Python SDK",
   description:
-    "Complete reference for the EngramClient Python SDK. Ingest text, run semantic queries, batch operations, auto-discovery, and private namespace encryption.",
+    "Complete reference for the EngramClient Python SDK. Ingest text, images, and PDFs, run semantic queries, batch operations, auto-discovery, and private namespace encryption.",
   alternates: { canonical: "https://theengram.space/docs/sdk" },
   openGraph: {
     title: "EngramClient Python SDK — Engram",
-    description: "Ingest, query, batch, and auto-discover vectors with the Engram Python SDK.",
+    description: "Ingest text, images, and PDFs. Query, batch, and auto-discover vectors with the Engram Python SDK.",
     url: "https://theengram.space/docs/sdk",
   },
 };
@@ -24,6 +24,8 @@ export default function SDKPage() {
         { id: "autodiscover", label: "from_subnet()" },
         { id: "namespaces", label: "Private namespaces" },
         { id: "ingest", label: "ingest()" },
+        { id: "ingest-image", label: "ingest_image()" },
+        { id: "ingest-pdf", label: "ingest_pdf()" },
         { id: "query", label: "query()" },
         { id: "batch", label: "batch_ingest_file()" },
         { id: "health", label: "health() / is_online()" },
@@ -32,17 +34,20 @@ export default function SDKPage() {
     >
       <H1>Python SDK</H1>
       <Lead>
-        <Ic>EngramClient</Ic> is a lightweight HTTP client for a single Engram miner. No extra dependencies — uses only stdlib <Ic>urllib</Ic>.
+        <Ic>EngramClient</Ic> is a lightweight HTTP client for a single Engram miner. Store text, images, and PDFs — no extra dependencies for text; <Ic>pypdf</Ic> needed for PDFs.
       </Lead>
 
       <H2 id="install">Install</H2>
-      <Code lang="bash">{`pip install engram-subnet`}</Code>
+      <Code lang="bash">{`pip install engram-subnet
+
+# For PDF support
+pip install engram-subnet pypdf`}</Code>
 
       <H2 id="client">EngramClient</H2>
       <Code lang="python">{`from engram.sdk import EngramClient
 
 client = EngramClient(
-    miner_url="http://127.0.0.1:8091",
+    miner_url="http://72.62.2.34:8091",   # or use from_subnet() for auto-discovery
     timeout=30.0,
 )`}</Code>
 
@@ -62,19 +67,7 @@ client = EngramClient(
         incentive score in parallel and returns a client pointed at the fastest responsive one.
       </P>
       <Code lang="python">{`# One line — no miner URL needed
-client = EngramClient.from_subnet(netuid=450)
-
-# With a private namespace
-client = EngramClient.from_subnet(
-    netuid=450,
-    network="finney",
-)
-# Then scope to a namespace:
-private_client = EngramClient(
-    client.miner_url,
-    namespace="my-project",
-    namespace_key="my-secret-key",
-)`}</Code>
+client = EngramClient.from_subnet(netuid=450)`}</Code>
 
       <Table
         headers={["Parameter", "Type", "Default", "Description"]}
@@ -129,13 +122,91 @@ print(cid)  # v1::a3f2b1c4d5e6f7...`}</Code>
         <Ic>MinerOfflineError</Ic>, <Ic>IngestError</Ic>, <Ic>InvalidCIDError</Ic>
       </P>
 
+      <H2 id="ingest-image">ingest_image()</H2>
+      <P>
+        Describe an image with Grok Vision (xAI) and store the description as a searchable memory.
+        The raw image bytes are <strong className="text-white">never sent to the miner</strong> — only the AI-generated
+        description is embedded and stored. A <Ic>content_cid</Ic> (SHA-256 of the image) is stored as metadata
+        for integrity verification.
+      </P>
+      <Code lang="python">{`result = client.ingest_image(
+    "photo.jpg",                      # path, or raw bytes
+    xai_api_key="xai-...",            # get one at console.x.ai
+    metadata={"user_id": "u_123"},    # optional extra metadata
+)
+
+print(result["cid"])          # v1::a3f2b1... — use this for search
+print(result["description"])  # "A photograph of a whiteboard showing..."
+print(result["content_cid"])  # sha256:abc123... — integrity check
+print(result["filename"])     # "photo.jpg"
+
+# Search by what's in the image later:
+results = client.query("whiteboard diagram with architecture")
+`}</Code>
+
+      <Table
+        headers={["Parameter", "Type", "Description"]}
+        rows={[
+          [<Ic key="s">source</Ic>, "str | Path | bytes", "Image file path or raw bytes"],
+          [<Ic key="xai">xai_api_key</Ic>, "str", "xAI API key for Grok Vision (required)"],
+          [<Ic key="mt">mime_type</Ic>, "str | None", "MIME type e.g. \"image/jpeg\" — auto-detected from extension if omitted"],
+          [<Ic key="m">metadata</Ic>, "dict | None", "Optional extra metadata"],
+        ]}
+      />
+      <P>
+        <strong className="text-white">Returns:</strong> dict with <Ic>cid</Ic>, <Ic>description</Ic>, <Ic>content_cid</Ic>, <Ic>filename</Ic>
+        <br />
+        <strong className="text-white">Raises:</strong>{" "}
+        <Ic>MinerOfflineError</Ic>, <Ic>IngestError</Ic>, <Ic>RuntimeError</Ic> (Grok API failure)
+      </P>
+      <Note>
+        Get a free xAI API key at <strong>console.x.ai</strong>. Grok Vision supports JPEG, PNG, GIF, and WebP.
+      </Note>
+
+      <H2 id="ingest-pdf">ingest_pdf()</H2>
+      <P>
+        Extract text from a PDF and store it as a searchable memory. Requires <Ic>pypdf</Ic>.
+        The full text (up to 8192 chars) is embedded; the SHA-256 of the raw PDF is stored as <Ic>content_cid</Ic>.
+      </P>
+      <Code lang="bash">{`pip install pypdf`}</Code>
+      <Code lang="python">{`result = client.ingest_pdf(
+    "research_paper.pdf",             # path, or raw bytes
+    metadata={"category": "research"},
+)
+
+print(result["cid"])          # v1::...
+print(result["pages"])        # 12
+print(result["chars"])        # 48293
+print(result["content_cid"])  # sha256:...
+
+# Search the PDF content later:
+results = client.query("transformer attention mechanism")
+`}</Code>
+
+      <Table
+        headers={["Parameter", "Type", "Description"]}
+        rows={[
+          [<Ic key="s">source</Ic>, "str | Path | bytes", "PDF file path or raw bytes"],
+          [<Ic key="m">metadata</Ic>, "dict | None", "Optional extra metadata"],
+        ]}
+      />
+      <P>
+        <strong className="text-white">Returns:</strong> dict with <Ic>cid</Ic>, <Ic>pages</Ic>, <Ic>chars</Ic>, <Ic>content_cid</Ic>, <Ic>filename</Ic>
+        <br />
+        <strong className="text-white">Raises:</strong>{" "}
+        <Ic>MinerOfflineError</Ic>, <Ic>IngestError</Ic>, <Ic>ImportError</Ic> (pypdf missing), <Ic>ValueError</Ic> (image-only PDF)
+      </P>
+      <Note>
+        Image-only / scanned PDFs have no extractable text. Run OCR first (e.g. <Ic>pytesseract</Ic>) or use <Ic>ingest_image()</Ic> per page.
+      </Note>
+
       <H2 id="query">query()</H2>
       <Code lang="python">{`results: list[dict] = client.query(text: str, top_k: int = 10)`}</Code>
-      <P>Semantic search over the miner's stored embeddings.</P>
+      <P>Semantic search over the miner's stored embeddings — works across text, images, and PDFs.</P>
       <Code lang="python">{`results = client.query("how does self-attention work?", top_k=10)
 # [
 #   {"cid": "v1::a3f2b1...", "score": 0.9821, "metadata": {"source": "arxiv"}},
-#   {"cid": "v1::b2e8c1...", "score": 0.8847, "metadata": {}},
+#   {"cid": "v1::b2e8c1...", "score": 0.8847, "metadata": {"type": "image"}},
 # ]`}</Code>
 
       <H2 id="batch">batch_ingest_file()</H2>

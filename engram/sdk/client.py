@@ -16,6 +16,8 @@ Usage:
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import socket
 import urllib.error
@@ -372,6 +374,184 @@ class EngramClient:
             return cids, errors
         return cids
 
+    def ingest_image(
+        self,
+        source: str | Path | bytes,
+        *,
+        xai_api_key: str,
+        mime_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Describe an image with Grok Vision and store the description as a memory.
+
+        The image is described by the xAI Grok Vision model. The resulting text
+        description is embedded and stored on the miner. The raw image bytes are
+        **not** sent to the miner — only the semantic description is stored.
+
+        Args:
+            source:      File path, Path object, or raw image bytes.
+            xai_api_key: Your xAI API key (get one at console.x.ai).
+            mime_type:   MIME type of the image (e.g. "image/jpeg"). Auto-detected
+                         from file extension if source is a path and mime_type is None.
+            metadata:    Optional extra metadata stored alongside the vector.
+
+        Returns:
+            dict with keys:
+                "cid"         — Engram CID (semantic address for search)
+                "description" — AI-generated description of the image
+                "content_cid" — sha256 of raw image bytes (integrity check)
+                "filename"    — source filename if a path was provided
+
+        Raises:
+            MinerOfflineError:  Miner is unreachable.
+            IngestError:        Miner rejected the request.
+            RuntimeError:       Grok Vision API call failed.
+
+        Example::
+
+            result = client.ingest_image(
+                "photo.jpg",
+                xai_api_key="xai-...",
+            )
+            print(result["cid"])         # v1::a3f2b1...
+            print(result["description"]) # "A photograph of..."
+        """
+        # ── Read bytes + detect mime type ──────────────────────────────────
+        filename: str | None = None
+        if isinstance(source, (str, Path)):
+            path = Path(source)
+            filename = path.name
+            image_bytes = path.read_bytes()
+            if mime_type is None:
+                ext = path.suffix.lower()
+                mime_type = {
+                    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                    ".png": "image/png", ".gif": "image/gif",
+                    ".webp": "image/webp",
+                }.get(ext, "image/png")
+        else:
+            image_bytes = source
+            if mime_type is None:
+                mime_type = "image/png"
+
+        content_cid = "sha256:" + hashlib.sha256(image_bytes).hexdigest()
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+
+        # ── Call Grok Vision ───────────────────────────────────────────────
+        description = self._describe_image_grok(b64, mime_type, xai_api_key)
+
+        # ── Build metadata ─────────────────────────────────────────────────
+        meta: dict[str, Any] = {
+            "type": "image",
+            "content_cid": content_cid,
+            **({"source": filename} if filename else {}),
+            **(metadata or {}),
+        }
+        # Store first 500 chars of description so CID page can show it
+        meta["text"] = description[:500]
+
+        cid = self.ingest(description, metadata=meta)
+
+        return {
+            "cid": cid,
+            "description": description,
+            "content_cid": content_cid,
+            "filename": filename,
+        }
+
+    def ingest_pdf(
+        self,
+        source: str | Path | bytes,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Extract text from a PDF and store it as a memory.
+
+        Requires the ``pypdf`` package::
+
+            pip install pypdf
+
+        Args:
+            source:   File path, Path object, or raw PDF bytes.
+            metadata: Optional extra metadata.
+
+        Returns:
+            dict with keys:
+                "cid"         — Engram CID
+                "pages"       — number of pages extracted
+                "chars"       — number of characters stored
+                "content_cid" — sha256 of the raw PDF bytes
+                "filename"    — source filename if a path was provided
+
+        Raises:
+            MinerOfflineError:  Miner is unreachable.
+            IngestError:        Miner rejected the request.
+            ImportError:        pypdf is not installed.
+            ValueError:         PDF has no extractable text (image-only PDF).
+
+        Example::
+
+            result = client.ingest_pdf("research_paper.pdf")
+            print(result["cid"])    # v1::...
+            print(result["pages"])  # 12
+        """
+        try:
+            import pypdf  # type: ignore
+        except ImportError:
+            raise ImportError(
+                "ingest_pdf() requires pypdf. Install it with:\n"
+                "  pip install pypdf"
+            )
+
+        # ── Read bytes ─────────────────────────────────────────────────────
+        filename: str | None = None
+        if isinstance(source, (str, Path)):
+            path = Path(source)
+            filename = path.name
+            pdf_bytes = path.read_bytes()
+        else:
+            pdf_bytes = source
+
+        content_cid = "sha256:" + hashlib.sha256(pdf_bytes).hexdigest()
+
+        # ── Extract text ───────────────────────────────────────────────────
+        import io
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        pages = len(reader.pages)
+        raw = " ".join(
+            (page.extract_text() or "") for page in reader.pages
+        )
+        text = " ".join(raw.split()).strip()
+
+        if not text:
+            raise ValueError(
+                "PDF appears to be empty or image-only. "
+                "For scanned PDFs, run OCR first or use ingest_image() per page."
+            )
+
+        # ── Build metadata + ingest ────────────────────────────────────────
+        MAX_CHARS = 8192
+        meta: dict[str, Any] = {
+            "type": "pdf",
+            "pages": str(pages),
+            "content_cid": content_cid,
+            "text": text[:500],
+            **({"source": filename} if filename else {}),
+            **(metadata or {}),
+        }
+
+        cid = self.ingest(text[:MAX_CHARS], metadata=meta)
+
+        return {
+            "cid": cid,
+            "pages": pages,
+            "chars": len(text),
+            "content_cid": content_cid,
+            "filename": filename,
+        }
+
     def health(self) -> dict[str, Any]:
         """
         Check miner liveness.
@@ -441,6 +621,60 @@ class EngramClient:
             parse_cid(cid)
         except ValueError as exc:
             raise InvalidCIDError(cid) from exc
+
+    def _describe_image_grok(self, b64: str, mime_type: str, api_key: str) -> str:
+        """Call xAI Grok Vision to describe an image. Returns the description string."""
+        payload = json.dumps({
+            "model": "grok-2-vision-latest",
+            "max_tokens": 1024,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{b64}",
+                            "detail": "high",
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "Describe this image in detail. Extract any visible text verbatim. "
+                            "Include layout, content, and context. Be thorough — this description "
+                            "will be stored as a searchable memory."
+                        ),
+                    },
+                ],
+            }],
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.x.ai/v1/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")[:300]
+            raise RuntimeError(f"Grok Vision API error {exc.code}: {body}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Grok Vision API request failed: {exc}") from exc
+
+        description = (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+        if not description:
+            raise RuntimeError("Grok Vision returned an empty description")
+        return description
 
     def __repr__(self) -> str:
         return f"EngramClient(miner_url={self.miner_url!r}, timeout={self.timeout})"
