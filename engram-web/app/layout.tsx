@@ -68,8 +68,10 @@ export const metadata: Metadata = {
     canonical: BASE_URL,
   },
   icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
-    shortcut: "/favicon.svg",
+    icon: [
+      { url: "/logo.png", type: "image/png", sizes: "any" },
+    ],
+    shortcut: "/logo.png",
     apple: "/logo.png",
   },
   openGraph: {
