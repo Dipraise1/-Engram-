@@ -5,13 +5,34 @@ const BASE_URL = "https://theengram.space";
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
 
-  const staticPages: MetadataRoute.Sitemap = [
+  return [
+    // ── Core pages ────────────────────────────────────────────────────────
     {
       url: BASE_URL,
       lastModified: now,
       changeFrequency: "weekly",
       priority: 1.0,
     },
+    {
+      url: `${BASE_URL}/playground`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.9,
+    },
+    {
+      url: `${BASE_URL}/memory`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.8,
+    },
+    {
+      url: `${BASE_URL}/dashboard`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.7,
+    },
+
+    // ── Docs ──────────────────────────────────────────────────────────────
     {
       url: `${BASE_URL}/docs`,
       lastModified: now,
@@ -22,7 +43,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${BASE_URL}/docs/quickstart`,
       lastModified: now,
       changeFrequency: "monthly",
-      priority: 0.8,
+      priority: 0.85,
     },
     {
       url: `${BASE_URL}/docs/sdk`,
@@ -31,10 +52,40 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
+      url: `${BASE_URL}/docs/cli`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.75,
+    },
+    {
+      url: `${BASE_URL}/docs/miner`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.75,
+    },
+    {
+      url: `${BASE_URL}/docs/validator`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.75,
+    },
+    {
+      url: `${BASE_URL}/docs/architecture`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.65,
+    },
+    {
+      url: `${BASE_URL}/docs/protocol`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.65,
+    },
+    {
       url: `${BASE_URL}/docs/namespaces`,
       lastModified: now,
       changeFrequency: "monthly",
-      priority: 0.7,
+      priority: 0.65,
     },
     {
       url: `${BASE_URL}/docs/sdk-langchain`,
@@ -52,51 +103,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${BASE_URL}/docs/sdk-errors`,
       lastModified: now,
       changeFrequency: "monthly",
-      priority: 0.6,
-    },
-    {
-      url: `${BASE_URL}/docs/cli`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/docs/miner`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/docs/validator`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/docs/protocol`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
-    {
-      url: `${BASE_URL}/docs/architecture`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
-    {
-      url: `${BASE_URL}/dashboard`,
-      lastModified: now,
-      changeFrequency: "daily",
-      priority: 0.5,
-    },
-    {
-      url: `${BASE_URL}/playground`,
-      lastModified: now,
-      changeFrequency: "weekly",
-      priority: 0.5,
+      priority: 0.55,
     },
   ];
-
-  return staticPages;
 }

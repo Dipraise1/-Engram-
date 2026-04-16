@@ -29,26 +29,34 @@ const BASE_URL = "https://theengram.space";
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
-    default: "Engram — Decentralized Vector Database on Bittensor",
+    default: "Engram — Decentralized AI Memory Layer on Bittensor",
     template: "%s | Engram",
   },
   description:
-    "The first decentralized, content-addressed vector database built on Bittensor. Store, retrieve, and prove ownership of AI embeddings — no central authority, no AWS, full cryptographic proof.",
+    "Engram is the decentralized AI memory layer on Bittensor subnet 450. Store text, images, and PDFs as permanent, content-addressed vector embeddings — retrieved by incentivized miners, archived on Arweave. No central authority.",
   keywords: [
-    "vector database",
     "decentralized vector database",
-    "bittensor subnet",
+    "AI memory layer",
+    "bittensor subnet 450",
     "embeddings storage",
     "semantic search",
     "decentralized AI",
-    "RAG",
+    "RAG memory",
     "retrieval augmented generation",
-    "TAO",
-    "blockchain AI",
-    "IPFS vector database",
     "content-addressed embeddings",
-    "AI memory layer",
+    "AI agent memory",
+    "permanent AI memory",
+    "vector database bittensor",
+    "TAO subnet",
+    "blockchain vector database",
+    "FAISS HNSW",
+    "open source vector database",
+    "self-hosted vector database",
+    "AI embeddings storage",
+    "decentralized RAG",
+    "Arweave AI storage",
     "engram subnet",
+    "engram bittensor",
   ],
   authors: [{ name: "Engram Contributors", url: BASE_URL }],
   creator: "Engram",
@@ -75,9 +83,9 @@ export const metadata: Metadata = {
     apple: "/logo.png",
   },
   openGraph: {
-    title: "Engram — Decentralized Vector Database on Bittensor",
+    title: "Engram — Decentralized AI Memory Layer on Bittensor",
     description:
-      "The first decentralized, content-addressed vector database built on Bittensor. Store and retrieve AI embeddings with cryptographic proofs — no central authority.",
+      "Store text, images, and PDFs as permanent, content-addressed vector embeddings on Bittensor subnet 450. Retrieval, semantic search, and cryptographic storage proofs — no central authority.",
     type: "website",
     url: BASE_URL,
     siteName: "Engram",
@@ -94,9 +102,9 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     site: "@engramsubnet",
-    title: "Engram — Decentralized Vector Database on Bittensor",
+    title: "Engram — Decentralized AI Memory Layer on Bittensor",
     description:
-      "The first decentralized vector DB on Bittensor. Store embeddings with cryptographic proofs — no AWS, no central authority.",
+      "Permanent, content-addressed AI memory on Bittensor subnet 450. Store text, images, and PDFs with cryptographic proofs — no AWS, no central authority.",
     images: ["/og-image.png"],
   },
 };
@@ -109,29 +117,92 @@ const jsonLd = {
       "@id": `${BASE_URL}/#software`,
       name: "Engram",
       description:
-        "Decentralized, content-addressed vector database built on Bittensor. Store, retrieve, and prove ownership of AI embeddings without a central authority.",
+        "Decentralized AI memory layer built on Bittensor subnet 450. Store text, images, and PDFs as content-addressed embeddings — retrieved and proved by a network of incentivized miners.",
       url: BASE_URL,
       applicationCategory: "DeveloperApplication",
+      applicationSubCategory: "Vector Database",
       operatingSystem: "Linux, macOS, Windows",
       offers: {
         "@type": "Offer",
         price: "0",
         priceCurrency: "USD",
       },
+      featureList: [
+        "Decentralized vector storage on Bittensor",
+        "Content-addressed embeddings (CID)",
+        "Permanent blob storage via Arweave",
+        "FAISS HNSW semantic search",
+        "HMAC storage proof challenges",
+        "Python SDK and CLI",
+        "LangChain and LlamaIndex integrations",
+      ],
       author: {
         "@type": "Organization",
         name: "Engram Contributors",
         url: BASE_URL,
       },
-      sameAs: ["https://github.com/Dipraise1/-Engram-"],
+      sameAs: [
+        "https://github.com/Dipraise1/-Engram-",
+        "https://twitter.com/engramsubnet",
+      ],
     },
     {
       "@type": "WebSite",
       "@id": `${BASE_URL}/#website`,
       url: BASE_URL,
       name: "Engram",
-      description: "Decentralized vector database on Bittensor",
+      description: "Decentralized AI memory layer on Bittensor",
       publisher: { "@id": `${BASE_URL}/#software` },
+      potentialAction: {
+        "@type": "SearchAction",
+        target: { "@type": "EntryPoint", urlTemplate: `${BASE_URL}/memory?q={search_term_string}` },
+        "query-input": "required name=search_term_string",
+      },
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "What is Engram?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Engram is a decentralized AI memory layer built on Bittensor subnet 450. It lets you store text, images, and PDFs as content-addressed vector embeddings that are replicated across a network of incentivized miners and permanently archived on Arweave.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "How does Engram differ from Pinecone or Weaviate?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Unlike centralised vector databases, Engram has no single point of failure or central authority. Data is stored across multiple miners on the Bittensor blockchain, each of whom must cryptographically prove they hold your data. There is no monthly subscription — miners are paid in TAO tokens by the network.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "What is a content-addressed CID?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "A CID (content identifier) is a SHA-256 hash derived from the vector embedding and metadata of your stored content. The same text always produces the same CID, regardless of which miner stores it — making storage verifiable and tamper-proof.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "How do I store data on Engram?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "You can use the Python SDK (pip install engram-subnet), the CLI, or the web playground at theengram.space/playground. Each method returns a permanent CID you can use to retrieve the data later.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "What is Bittensor subnet 450?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Subnet 450 is Engram's slot on the Bittensor network. Bittensor is a decentralized machine learning network where miners and validators earn TAO tokens for running useful AI services. Engram's subnet uses those incentives to ensure permanent, verifiable vector storage.",
+          },
+        },
+      ],
     },
   ],
 };
