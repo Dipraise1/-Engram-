@@ -4,11 +4,11 @@ import { DocPage, H1, H2, H3, Lead, P, Code, Note, Table, Ic } from "../ui";
 export const metadata: Metadata = {
   title: "EngramClient Python SDK",
   description:
-    "Complete reference for the EngramClient Python SDK. Ingest text, images, and PDFs, run semantic queries, batch operations, auto-discovery, and private namespace encryption.",
+    "Complete reference for the EngramClient Python SDK. Ingest text, images, PDFs, URLs, and conversations. Semantic query with metadata filters, get, delete, list, and batch operations.",
   alternates: { canonical: "https://theengram.space/docs/sdk" },
   openGraph: {
     title: "EngramClient Python SDK — Engram",
-    description: "Ingest text, images, and PDFs. Query, batch, and auto-discover vectors with the Engram Python SDK.",
+    description: "Ingest text, images, PDFs, URLs, and conversations. Query with filters, get, delete, list with the Engram Python SDK.",
     url: "https://theengram.space/docs/sdk",
   },
 };
@@ -26,7 +26,12 @@ export default function SDKPage() {
         { id: "ingest", label: "ingest()" },
         { id: "ingest-image", label: "ingest_image()" },
         { id: "ingest-pdf", label: "ingest_pdf()" },
+        { id: "ingest-url", label: "ingest_url()" },
+        { id: "ingest-conversation", label: "ingest_conversation()" },
         { id: "query", label: "query()" },
+        { id: "get", label: "get()" },
+        { id: "delete", label: "delete()" },
+        { id: "list", label: "list()" },
         { id: "batch", label: "batch_ingest_file()" },
         { id: "health", label: "health() / is_online()" },
         { id: "multi-miner", label: "Multi-miner pattern" },
@@ -34,7 +39,7 @@ export default function SDKPage() {
     >
       <H1>Python SDK</H1>
       <Lead>
-        <Ic>EngramClient</Ic> is a lightweight HTTP client for a single Engram miner. Store text, images, and PDFs — no extra dependencies for text; <Ic>pypdf</Ic> needed for PDFs.
+        <Ic>EngramClient</Ic> is a lightweight HTTP client for a single Engram miner. Store text, images, PDFs, URLs, and conversations. Query with metadata filters, retrieve by CID, delete, and list records. No extra dependencies for text; <Ic>pypdf</Ic> needed for PDFs.
       </Lead>
 
       <H2 id="install">Install</H2>
@@ -200,14 +205,158 @@ results = client.query("transformer attention mechanism")
         Image-only / scanned PDFs have no extractable text. Run OCR first (e.g. <Ic>pytesseract</Ic>) or use <Ic>ingest_image()</Ic> per page.
       </Note>
 
+      <H2 id="ingest-url">ingest_url()</H2>
+      <P>
+        Fetch a web page, strip navigation and boilerplate, and store the readable text as a memory.
+        SSRF protection is built in — private/loopback addresses are blocked.
+      </P>
+      <Code lang="python">{`result = client.ingest_url(
+    "https://arxiv.org/abs/1706.03762",
+    metadata={"category": "research"},
+)
+
+print(result["cid"])    # v1::...
+print(result["title"])  # "Attention Is All You Need"
+print(result["chars"])  # 6842
+print(result["url"])    # final URL after redirects
+
+# Search later:
+results = client.query("transformer architecture paper")`}</Code>
+
+      <Table
+        headers={["Parameter", "Type", "Description"]}
+        rows={[
+          [<Ic key="u">url</Ic>, "str", "HTTP or HTTPS URL to fetch"],
+          [<Ic key="m">metadata</Ic>, "dict | None", "Optional extra metadata merged with auto-extracted title/source"],
+        ]}
+      />
+      <P>
+        <strong className="text-white">Returns:</strong> dict with <Ic>cid</Ic>, <Ic>url</Ic>, <Ic>title</Ic>, <Ic>chars</Ic>
+        <br />
+        <strong className="text-white">Raises:</strong>{" "}
+        <Ic>ValueError</Ic> (invalid URL, private address), <Ic>RuntimeError</Ic> (fetch failure, no readable text)
+      </P>
+
+      <H2 id="ingest-conversation">ingest_conversation()</H2>
+      <P>
+        Store a conversation thread as individual turn memories. Each message is embedded separately so
+        individual turns are semantically searchable. A shared <Ic>session_id</Ic> links them.
+      </P>
+      <Code lang="python">{`messages = [
+    {"role": "user",      "content": "What's the capital of France?"},
+    {"role": "assistant", "content": "The capital of France is Paris."},
+    {"role": "user",      "content": "Tell me more about Paris."},
+]
+
+cids = client.ingest_conversation(
+    messages,
+    session_id="session_abc123",
+    metadata={"user_id": "u_456"},
+)
+
+print(cids)
+# ["v1::a3f2...", "v1::b2e8...", "v1::c9f4..."]
+
+# Retrieve conversation turns later:
+results = client.query("capital city France")
+# Returns the turn that mentioned Paris`}</Code>
+
+      <Table
+        headers={["Parameter", "Type", "Description"]}
+        rows={[
+          [<Ic key="msg">messages</Ic>, 'list[dict]', 'List of {"role": ..., "content": ...} dicts'],
+          [<Ic key="sid">session_id</Ic>, "str", "Shared ID linking all turns — stored as metadata"],
+          [<Ic key="m">metadata</Ic>, "dict | None", "Optional extra metadata added to every turn"],
+        ]}
+      />
+      <P>
+        <strong className="text-white">Returns:</strong> list of CID strings — one per message turn
+      </P>
+      <Note>
+        Filters empty messages automatically. Each stored record includes <Ic>role</Ic>, <Ic>session_id</Ic>, <Ic>turn</Ic>, and <Ic>timestamp</Ic> in its metadata.
+      </Note>
+
       <H2 id="query">query()</H2>
-      <Code lang="python">{`results: list[dict] = client.query(text: str, top_k: int = 10)`}</Code>
-      <P>Semantic search over the miner's stored embeddings — works across text, images, and PDFs.</P>
-      <Code lang="python">{`results = client.query("how does self-attention work?", top_k=10)
+      <Code lang="python">{`results: list[dict] = client.query(text: str, top_k: int = 10, filter: dict = None)`}</Code>
+      <P>Semantic search over stored embeddings — works across text, images, PDFs, URLs, and conversation turns.</P>
+      <Code lang="python">{`# Basic search
+results = client.query("how does self-attention work?", top_k=10)
 # [
 #   {"cid": "v1::a3f2b1...", "score": 0.9821, "metadata": {"source": "arxiv"}},
-#   {"cid": "v1::b2e8c1...", "score": 0.8847, "metadata": {"type": "image"}},
-# ]`}</Code>
+#   {"cid": "v1::b2e8c1...", "score": 0.8847, "metadata": {"type": "url"}},
+# ]
+
+# Filter by metadata — AND semantics (all conditions must match)
+results = client.query(
+    "revenue figures",
+    top_k=5,
+    filter={"user_id": "u_123", "type": "text"},
+)
+
+# Only conversation turns for a specific session
+turns = client.query(
+    "Paris",
+    filter={"session_id": "session_abc123", "role": "assistant"},
+)`}</Code>
+
+      <Table
+        headers={["Parameter", "Type", "Description"]}
+        rows={[
+          [<Ic key="t">text</Ic>, "str", "Natural language query"],
+          [<Ic key="k">top_k</Ic>, "int", "Maximum results to return (default 10)"],
+          [<Ic key="f">filter</Ic>, "dict | None", "AND-match metadata filter — all key/value pairs must match"],
+        ]}
+      />
+
+      <H2 id="get">get()</H2>
+      <P>Retrieve a stored record by its CID. Returns the metadata (not the raw embedding vector).</P>
+      <Code lang="python">{`record = client.get("v1::a3f2b1c4d5e6f7...")
+
+if record:
+    print(record["cid"])       # v1::a3f2b1...
+    print(record["metadata"])  # {"source": "arxiv", "title": "Attention Is All You Need"}
+else:
+    print("Not found")`}</Code>
+      <P>
+        <strong className="text-white">Returns:</strong> dict with <Ic>cid</Ic> and <Ic>metadata</Ic>, or <Ic>None</Ic> if not found
+      </P>
+
+      <H2 id="delete">delete()</H2>
+      <P>Remove a stored record by its CID. The operation is idempotent.</P>
+      <Code lang="python">{`deleted = client.delete("v1::a3f2b1c4d5e6f7...")
+print(deleted)  # True if it existed, False if not found`}</Code>
+      <P>
+        <strong className="text-white">Returns:</strong> <Ic>bool</Ic> — <Ic>True</Ic> if deleted, <Ic>False</Ic> if CID was not found
+        <br />
+        <strong className="text-white">Raises:</strong> <Ic>MinerOfflineError</Ic>
+      </P>
+
+      <H2 id="list">list()</H2>
+      <P>List stored records with optional metadata filtering and pagination.</P>
+      <Code lang="python">{`# All records (first page)
+records = client.list(limit=50, offset=0)
+
+# Filter by type
+image_records = client.list(filter={"type": "image"})
+
+# All memories for a user, paginated
+page1 = client.list(filter={"user_id": "u_123"}, limit=20, offset=0)
+page2 = client.list(filter={"user_id": "u_123"}, limit=20, offset=20)
+
+for r in page1:
+    print(r["cid"], r["metadata"].get("title", ""))`}</Code>
+
+      <Table
+        headers={["Parameter", "Type", "Description"]}
+        rows={[
+          [<Ic key="f">filter</Ic>, "dict | None", "AND-match metadata filter"],
+          [<Ic key="l">limit</Ic>, "int", "Max records per page (default 50)"],
+          [<Ic key="o">offset</Ic>, "int", "Records to skip (default 0)"],
+        ]}
+      />
+      <P>
+        <strong className="text-white">Returns:</strong> list of dicts with <Ic>cid</Ic> and <Ic>metadata</Ic>
+      </P>
 
       <H2 id="batch">batch_ingest_file()</H2>
       <P>Ingest all records from a JSONL file. Each line must be a JSON object with a <Ic>text</Ic> key.</P>

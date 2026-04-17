@@ -88,12 +88,24 @@ export default function PlaygroundPage() {
       } else if (ingestTab === "url") {
         const url = ingestUrl.trim();
         if (!url) { setIngestLoading(false); return; }
-        const fetchRes = await fetch(url, { signal: AbortSignal.timeout(10000) });
-        if (!fetchRes.ok) throw new Error(`Fetching URL failed (${fetchRes.status})`);
-        const ct = fetchRes.headers.get("content-type") ?? "";
-        text = ct.includes("json") ? JSON.stringify(await fetchRes.json(), null, 2) : await fetchRes.text();
-        text = text.slice(0, 8192);
-        source = url;
+        // Route through server-side API to avoid CORS and enable SSRF protection
+        const urlRes = await fetch("/api/subnet/ingest/url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const urlData = await urlRes.json();
+        if (!urlRes.ok || urlData.error) {
+          setIngestError(urlData.error || "URL ingest failed.");
+          setIngestLoading(false);
+          return;
+        }
+        setIngestHistory((prev) => [{ cid: urlData.cid, text: urlData.title || url }, ...prev]);
+        setLastIngestText(urlData.title || url);
+        setIngestUrl("");
+        showToast(urlData.cid);
+        setIngestLoading(false);
+        return;
       } else if (ingestTab === "file") {
         text = ingestText.trim();
         if (!text) { setIngestLoading(false); return; }
