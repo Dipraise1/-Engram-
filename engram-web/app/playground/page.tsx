@@ -126,7 +126,6 @@ export default function PlaygroundPage() {
         setIngestHistory((prev) => [{ cid: data.cid, text }, ...prev]);
         setLastIngestText(text);
         if (ingestTab === "text") setIngestText("");
-        else if (ingestTab === "url") setIngestUrl("");
         else { setIngestText(""); setIngestFilename(null); }
         showToast(data.cid);
       }
