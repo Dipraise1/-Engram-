@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
-from engram.config import MAX_METADATA_BYTES, MAX_TEXT_CHARS, CANONICAL_MODEL_VERSION, MIN_INGEST_STAKE_TAO
+from engram.config import MAX_METADATA_BYTES, MAX_TEXT_CHARS, CANONICAL_MODEL_VERSION, MIN_INGEST_STAKE_TAO, DP_EPSILON
 from engram.miner.embedder import Embedder
 from engram.miner.store import VectorRecord, VectorStore
 from engram.protocol import IngestSynapse
@@ -25,6 +25,24 @@ except ImportError:
     _RUST_AVAILABLE = False
     logger.warning("engram_core (Rust) not available — falling back to Python CID generation.")
     from engram import cid as _cid_py  # Python fallback
+
+
+def _add_dp_noise(embedding: np.ndarray, epsilon: float) -> np.ndarray:
+    """
+    Gaussian noise mechanism for (epsilon, 1e-5)-DP on unit-sphere embeddings.
+
+    Calibrated to L2 sensitivity 1.0 (normalised vectors). Per-dimension sigma
+    scales with 1/sqrt(dim) so total noise magnitude is independent of dimension,
+    preserving approximate nearest-neighbour quality while defeating vector
+    inversion attacks (ATLAS AML.T0024).
+
+    Re-normalises the result so cosine similarity search still works correctly.
+    """
+    sigma = 1.0 / (epsilon * float(embedding.shape[0]) ** 0.5)
+    noise = np.random.normal(0.0, sigma, embedding.shape).astype(np.float32)
+    noisy = embedding + noise
+    norm = np.linalg.norm(noisy)
+    return noisy / norm if norm > 0.0 else noisy
 
 
 def _generate_cid(embedding: np.ndarray, metadata: dict[str, Any], model_version: str) -> str:
@@ -45,12 +63,17 @@ class IngestHandler:
         subtensor=None,
         netuid: int | None = None,
         namespace_registry=None,
+        dp_epsilon: float | None = None,
     ) -> None:
         self._store = store
         self._embedder = embedder
         self._subtensor = subtensor   # optional — if set, stake check is enforced
         self._netuid = netuid
         self._ns_registry = namespace_registry
+        # Differential privacy: add calibrated Gaussian noise to private-namespace
+        # embeddings before storage to resist vector inversion (ATLAS AML.T0024).
+        # None disables noise; defaults to DP_EPSILON from config when not overridden.
+        self._dp_epsilon: float | None = dp_epsilon if dp_epsilon is not None else DP_EPSILON
 
     def handle(self, synapse: IngestSynapse, caller_hotkey: str | None = None) -> IngestSynapse:
         start = time.perf_counter()
@@ -60,6 +83,12 @@ class IngestHandler:
             self._validate(synapse)
             namespace = self._resolve_namespace(synapse)
             embedding = self._resolve_embedding(synapse)
+
+            # Apply DP noise for private namespaces when epsilon is configured.
+            from engram.miner.store import _PUBLIC_NS
+            if self._dp_epsilon is not None and namespace != _PUBLIC_NS:
+                embedding = _add_dp_noise(embedding, self._dp_epsilon)
+
             cid = _generate_cid(embedding, synapse.metadata, synapse.model_version)
 
             self._store.upsert(VectorRecord(

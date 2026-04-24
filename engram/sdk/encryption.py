@@ -183,6 +183,14 @@ class NamespaceEncryption:
         except Exception as exc:
             raise ValueError(f"Could not decrypt payload: {exc}") from exc
 
+    def encrypt_raw(self, data: bytes) -> bytes:
+        """Encrypt raw bytes (e.g. image/PDF before Arweave upload). Returns iv+ciphertext+tag."""
+        return _aesgcm_encrypt(self._key, data)
+
+    def decrypt_raw(self, data: bytes) -> bytes:
+        """Decrypt bytes produced by encrypt_raw."""
+        return _aesgcm_decrypt(self._key, data)
+
     def decrypt_results(self, results: list[dict]) -> list[dict]:
         return _decrypt_results(self, results)
 
@@ -308,6 +316,37 @@ class HybridEncryption:
             raise
         except Exception as exc:
             raise ValueError(f"Could not decrypt hybrid payload: {exc}") from exc
+
+    def encrypt_raw(self, data: bytes) -> bytes:
+        """
+        Encrypt raw bytes (e.g. image/PDF before Arweave upload).
+
+        Wire format: ephemeral_public[32] || iv[12] || ciphertext+tag
+        Each call uses a fresh ephemeral key — forward secrecy preserved.
+        """
+        from cryptography.hazmat.primitives.asymmetric.x25519 import (
+            X25519PrivateKey, X25519PublicKey,
+        )
+        ephemeral_priv      = X25519PrivateKey.generate()
+        ephemeral_pub_bytes = ephemeral_priv.public_key().public_bytes_raw()
+        recipient_pub       = X25519PublicKey.from_public_bytes(self._public_key_bytes)
+        shared_secret       = ephemeral_priv.exchange(recipient_pub)
+        aes_key             = _hkdf(shared_secret, salt=ephemeral_pub_bytes)
+        return ephemeral_pub_bytes + _aesgcm_encrypt(aes_key, data)
+
+    def decrypt_raw(self, data: bytes) -> bytes:
+        """Decrypt bytes produced by encrypt_raw. Requires private_key."""
+        if self._private_key_bytes is None:
+            raise ValueError("No private key — cannot decrypt raw bytes.")
+        from cryptography.hazmat.primitives.asymmetric.x25519 import (
+            X25519PrivateKey, X25519PublicKey,
+        )
+        ephemeral_pub_bytes = data[:_X25519_LEN]
+        encrypted           = data[_X25519_LEN:]
+        recipient_priv      = X25519PrivateKey.from_private_bytes(self._private_key_bytes)
+        shared_secret       = recipient_priv.exchange(X25519PublicKey.from_public_bytes(ephemeral_pub_bytes))
+        aes_key             = _hkdf(shared_secret, salt=ephemeral_pub_bytes)
+        return _aesgcm_decrypt(aes_key, encrypted)
 
     def decrypt_results(self, results: list[dict]) -> list[dict]:
         return _decrypt_results(self, results)

@@ -445,6 +445,24 @@ class EngramClient:
         content_cid = "sha256:" + hashlib.sha256(image_bytes).hexdigest()
         b64 = base64.b64encode(image_bytes).decode("ascii")
 
+        # ── Arweave permanent storage ──────────────────────────────────────
+        # Encrypt before upload when operating in a private namespace so
+        # gateway operators cannot read the raw media (ATLAS AML.T0035).
+        from engram.storage.arweave import try_upload as _arweave_upload
+        _upload_bytes = (
+            self._enc.encrypt_raw(image_bytes) if self._enc is not None else image_bytes
+        )
+        _arweave = _arweave_upload(
+            _upload_bytes,
+            "application/octet-stream" if self._enc is not None else mime_type,
+            {
+                "Content-Hash": content_cid,
+                **({"File-Name": filename} if filename else {}),
+                "Encrypted": "true" if self._enc is not None else "false",
+                "Content-Source": "engram-sdk",
+            },
+        )
+
         # ── Call Grok Vision ───────────────────────────────────────────────
         description = self._describe_image_grok(b64, mime_type, xai_api_key)
 
@@ -453,6 +471,7 @@ class EngramClient:
             "type": "image",
             "content_cid": content_cid,
             **({"source": filename} if filename else {}),
+            **({"arweave_tx_id": _arweave.tx_id, "arweave_url": _arweave.url} if _arweave else {}),
             **(metadata or {}),
         }
         # Store first 500 chars of description so CID page can show it
@@ -465,6 +484,8 @@ class EngramClient:
             "description": description,
             "content_cid": content_cid,
             "filename": filename,
+            "arweave_tx_id": _arweave.tx_id if _arweave else None,
+            "arweave_url": _arweave.url if _arweave else None,
         }
 
     def ingest_pdf(
@@ -523,6 +544,22 @@ class EngramClient:
 
         content_cid = "sha256:" + hashlib.sha256(pdf_bytes).hexdigest()
 
+        # ── Arweave permanent storage ──────────────────────────────────────
+        from engram.storage.arweave import try_upload as _arweave_upload
+        _upload_bytes = (
+            self._enc.encrypt_raw(pdf_bytes) if self._enc is not None else pdf_bytes
+        )
+        _arweave = _arweave_upload(
+            _upload_bytes,
+            "application/octet-stream" if self._enc is not None else "application/pdf",
+            {
+                "Content-Hash": content_cid,
+                **({"File-Name": filename} if filename else {}),
+                "Encrypted": "true" if self._enc is not None else "false",
+                "Content-Source": "engram-sdk",
+            },
+        )
+
         # ── Extract text ───────────────────────────────────────────────────
         import io
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
@@ -546,6 +583,7 @@ class EngramClient:
             "content_cid": content_cid,
             "text": text[:500],
             **({"source": filename} if filename else {}),
+            **({"arweave_tx_id": _arweave.tx_id, "arweave_url": _arweave.url} if _arweave else {}),
             **(metadata or {}),
         }
 
@@ -557,6 +595,8 @@ class EngramClient:
             "chars": len(text),
             "content_cid": content_cid,
             "filename": filename,
+            "arweave_tx_id": _arweave.tx_id if _arweave else None,
+            "arweave_url": _arweave.url if _arweave else None,
         }
 
     def get(self, cid: str) -> dict[str, Any]:
@@ -756,17 +796,34 @@ class EngramClient:
         if not text:
             raise RuntimeError(f"No text content found at {url}")
 
+        # ── Arweave permanent archive of raw page bytes ────────────────────
+        from engram.storage.arweave import try_upload as _arweave_upload
+        _raw_mime = "text/html" if "text/html" in content_type else "text/plain"
+        _arweave = _arweave_upload(
+            raw,
+            _raw_mime,
+            {"Source-URL": url[:128], "Content-Source": "engram-sdk"},
+        )
+
         MAX_CHARS = 8192
         meta: dict[str, Any] = {
             "source": url,
             "type": "url",
             "title": title[:256],
             "text": text[:500],
+            **({"arweave_tx_id": _arweave.tx_id, "arweave_url": _arweave.url} if _arweave else {}),
             **(metadata or {}),
         }
         cid = self.ingest(text[:MAX_CHARS], metadata=meta)
 
-        return {"cid": cid, "url": url, "title": title, "chars": len(text)}
+        return {
+            "cid": cid,
+            "url": url,
+            "title": title,
+            "chars": len(text),
+            "arweave_tx_id": _arweave.tx_id if _arweave else None,
+            "arweave_url": _arweave.url if _arweave else None,
+        }
 
     def ingest_conversation(
         self,

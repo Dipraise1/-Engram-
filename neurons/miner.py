@@ -269,9 +269,11 @@ async def run() -> None:
     embedder           = get_embedder()
     ns_registry        = NamespaceRegistry()
     att_registry       = AttestationRegistry(subtensor=subtensor, netuid=netuid)
+    from engram.config import DP_EPSILON
     ingest_handler     = IngestHandler(store=store, embedder=embedder,
                                        subtensor=subtensor, netuid=netuid,
-                                       namespace_registry=ns_registry)
+                                       namespace_registry=ns_registry,
+                                       dp_epsilon=DP_EPSILON)
     query_handler      = QueryHandler(store=store, embedder=embedder,
                                       namespace_registry=ns_registry,
                                       attestation_registry=att_registry)

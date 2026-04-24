@@ -61,6 +61,18 @@ MIN_INGEST_STAKE_TAO: float = 0.001
 MAX_METADATA_BYTES: int = 4096
 MAX_TEXT_CHARS: int = 8192
 
+# ── Arweave permanent media storage ───────────────────────────────────────────
+# Set ARWEAVE_KEY (JWK JSON) to enable; ingest_image/pdf/url will store raw
+# media on Arweave and include arweave_tx_id + arweave_url in vector metadata.
+ARWEAVE_GATEWAY_URL: str = os.getenv("ARWEAVE_GATEWAY_URL", "https://arweave.net")
+
+# ── Differential privacy for private namespace embeddings ─────────────────────
+# Gaussian mechanism (ATLAS AML.T0024 — vector inversion defence).
+# Lower epsilon = stronger privacy, slightly lower recall.
+# 3.0 is a good default for 1536-dim embeddings. Set DP_EPSILON=none to disable.
+_dp_env = os.getenv("DP_EPSILON", "3.0").strip().lower()
+DP_EPSILON: float | None = None if _dp_env in ("0", "none", "false", "") else float(_dp_env)
+
 # ── Security ───────────────────────────────────────────────────────────────────
 # REQUIRE_HOTKEY_SIG=true  — reject requests without a valid sr25519 signature
 # REQUIRE_HOTKEY_SIG=false — warn but allow (default; backward compatible)

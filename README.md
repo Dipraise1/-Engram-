@@ -18,7 +18,8 @@ Engram is a Bittensor subnet that turns text, images, and documents into **perma
 
 - **Content-addressed** — `v1::a3f2b1...` uniquely identifies an embedding, not a location
 - **Decentralized** — replicated across competing miners on Bittensor subnet 450
-- **Permanent** — binary files (images, PDFs) pinned to Arweave; text indexed in FAISS HNSW
+- **Permanent** — binary files (images, PDFs) pinned to Arweave across the full stack (SDK, miner, web)
+- **Private** — X25519 hybrid encryption with differential privacy noise on stored embeddings
 - **Incentivized** — miners earn TAO for provably storing and serving vectors
 - **Verifiable** — HMAC challenge-response proofs ensure miners actually hold the data
 
@@ -131,6 +132,45 @@ content_cid  = sha256:sha256(raw_bytes)            ← content address for retri
 arweave_tx   = <Arweave transaction ID>            ← permanent off-chain blob
 ```
 
+### Arweave Integration (full stack)
+
+Arweave storage is now wired through the entire subnet — not just the web frontend.
+Set `ARWEAVE_KEY` (JWK JSON) in the miner or SDK environment and raw media is automatically
+uploaded before vectorization. The `arweave_tx_id` and `arweave_url` are stored in vector metadata.
+
+```python
+import os
+os.environ["ARWEAVE_KEY"] = '{"kty":"RSA",...}'   # your JWK wallet
+
+client = EngramClient("http://72.62.2.34:8091")
+
+# Raw image bytes uploaded to Arweave, description embedded on miner
+result = client.ingest_image("photo.jpg", xai_api_key="xai-...")
+print(result["arweave_url"])    # https://arweave.net/<tx_id>
+
+# PDF bytes archived on Arweave, text embedded on miner
+result = client.ingest_pdf("paper.pdf")
+print(result["arweave_tx_id"])
+
+# Page HTML archived on Arweave, text extracted and embedded
+result = client.ingest_url("https://arxiv.org/abs/1706.03762")
+```
+
+For private namespaces, raw bytes are **encrypted with your X25519 public key before upload** so
+Arweave gateway operators cannot read the content.
+
+### Privacy & Security
+
+| Protection | Mechanism | ATLAS |
+|---|---|---|
+| Private namespace encryption | X25519 ECDH + HKDF + AES-256-GCM per message | — |
+| Vector inversion resistance | Gaussian DP noise on stored embeddings (ε=3.0) | AML.T0024 |
+| Encrypted media on Arweave | `encrypt_raw()` before upload for private clients | AML.T0035 |
+| Namespace trust | sr25519 attestation + on-chain stake tiers | AML.T0010 |
+| Anti-sybil | Stake-weighted miner trust + slash threshold | AML.T0016 |
+
+Configure DP noise: `DP_EPSILON=3.0` (default). Set to `none` to disable.
+
 ---
 
 ## Framework Integrations
@@ -171,6 +211,14 @@ ENV_FILE=.env.miner python neurons/miner.py
 ```
 
 The miner starts even if the testnet RPC is temporarily unavailable — it retries the chain connection in the background and runs chain-less until it reconnects.
+
+**Optional env vars:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `ARWEAVE_KEY` | — | JWK wallet JSON; enables Arweave media archival |
+| `DP_EPSILON` | `3.0` | DP noise for private namespace embeddings (`none` to disable) |
+| `REQUIRE_HOTKEY_SIG` | `false` | Reject unsigned requests |
 
 Full guide: [docs/miner.md](docs/miner.md)
 
@@ -247,17 +295,18 @@ Validators score miners every 120 seconds. Miners with proof success rate below 
 ```
 engram/
 ├── engram/              # Python package
-│   ├── miner/           # Ingest, query, embedder, store, rate limiter
+│   ├── miner/           # Ingest (+ DP noise), query, embedder, store, rate limiter
 │   ├── validator/       # Scoring, challenge, weight setting
-│   ├── sdk/             # Client, LangChain, LlamaIndex adapters
+│   ├── sdk/             # Client (+ Arweave), LangChain, LlamaIndex, encryption
+│   ├── storage/         # arweave.py — permanent media upload (Python layer)
 │   └── protocol.py      # Synapse types (IngestSynapse, QuerySynapse)
 ├── engram-core/         # Rust core — CID generation + storage proofs
-├── engram-web/          # Next.js frontend (theengram.space)
+├── engram-web/          # Next.js frontend (theengram.space, Vercel)
 │   ├── app/playground/  # Text / Image / PDF ingest UI
 │   ├── app/memory/      # Memory search + AI chat
 │   ├── app/cid/[id]/    # CID lookup + Arweave proof view
 │   ├── app/api/         # Next.js API routes → miner proxy
-│   └── lib/arweave.ts   # Arweave upload utility
+│   └── lib/arweave.ts   # Arweave upload utility (web layer)
 ├── neurons/             # miner.py, validator.py entry points
 ├── scripts/             # Setup, seeding, VPS utilities
 ├── tests/               # pytest suite
