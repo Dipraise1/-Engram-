@@ -81,7 +81,7 @@ pip install -e .
 ```python
 from engram.sdk import EngramClient
 
-client = EngramClient("http://72.62.2.34:8091")
+client = EngramClient("https://api.theengram.space")
 
 # Store text — returns a permanent CID
 cid = client.ingest("The transformer architecture changed everything.")
@@ -142,7 +142,7 @@ uploaded before vectorization. The `arweave_tx_id` and `arweave_url` are stored 
 import os
 os.environ["ARWEAVE_KEY"] = '{"kty":"RSA",...}'   # your JWK wallet
 
-client = EngramClient("http://72.62.2.34:8091")
+client = EngramClient("https://api.theengram.space")
 
 # Raw image bytes uploaded to Arweave, description embedded on miner
 result = client.ingest_image("photo.jpg", xai_api_key="xai-...")
@@ -161,15 +161,37 @@ Arweave gateway operators cannot read the content.
 
 ### Privacy & Security
 
-| Protection | Mechanism | ATLAS |
-|---|---|---|
-| Private namespace encryption | X25519 ECDH + HKDF + AES-256-GCM per message | — |
-| Vector inversion resistance | Gaussian DP noise on stored embeddings (ε=3.0) | AML.T0024 |
-| Encrypted media on Arweave | `encrypt_raw()` before upload for private clients | AML.T0035 |
-| Namespace trust | sr25519 attestation + on-chain stake tiers | AML.T0010 |
-| Anti-sybil | Stake-weighted miner trust + slash threshold | AML.T0016 |
+| Protection | Mechanism | ATLAS | Status |
+|---|---|---|---|
+| Private namespace encryption | X25519 ECDH + HKDF + AES-256-GCM per message | — | ✅ |
+| Vector inversion resistance | Gaussian DP noise on stored embeddings (ε=3.0) | AML.T0024 | ✅ |
+| Encrypted media on Arweave | `encrypt_raw()` before upload for private clients | AML.T0035 | ✅ |
+| Namespace auth — no key on wire | sr25519 signed challenge replaces `namespace_key` | AML.T0043 | ✅ |
+| Flag-stripping downgrade | `namespace` + `hotkey` covered by sig — stripping invalidates it | AML.T0043 | ✅ |
+| TLS on miner endpoints | `https://api.theengram.space` terminates TLS before port 8091 | passive sniff | ✅ |
+| Namespace trust tiers | sr25519 attestation + on-chain stake tiers | AML.T0010 | ✅ |
+| Anti-sybil | Stake-weighted trust + slash threshold | AML.T0016 | ✅ |
+| Compromised miner reads queries | Threshold decryption (K-of-N) | AML.T0010 | 🔲 planned |
+| Timing / access-pattern leak | Uniform response padding | AML.T0036 | 🔲 planned |
 
-Configure DP noise: `DP_EPSILON=3.0` (default). Set to `none` to disable.
+**Namespace auth** — when a `keypair` is set on the client, the raw key never leaves the machine.
+The client signs `engram-ns:{namespace}:{timestamp_ms}` with its sr25519 hotkey; the miner
+verifies the signature and stores the hotkey as the namespace owner. Legacy `namespace_key`
+still works for backward compatibility.
+
+```python
+# Secure namespace auth (keypair-based)
+import bittensor as bt
+wallet = bt.wallet(name="my_wallet")
+client = EngramClient("https://api.theengram.space", keypair=wallet.hotkey, namespace="my-ns")
+cid = client.ingest("private data")   # sig challenge sent — key never on wire
+
+# Legacy (still works, deprecated)
+client = EngramClient("https://api.theengram.space", namespace="my-ns", namespace_key="secret")
+```
+
+Configure DP noise: `DP_EPSILON=3.0` (default). Set to `none` to disable.  
+SDK clients should use `https://api.theengram.space` as `MINER_API_URL` to get TLS.
 
 ---
 
@@ -178,12 +200,12 @@ Configure DP noise: `DP_EPSILON=3.0` (default). Set to `none` to disable.
 ```python
 # LangChain
 from engram.sdk.langchain import EngramVectorStore
-store = EngramVectorStore(miner_url="http://72.62.2.34:8091", embeddings=your_embeddings)
+store = EngramVectorStore(miner_url="https://api.theengram.space", embeddings=your_embeddings)
 retriever = store.as_retriever(search_kwargs={"k": 5})
 
 # LlamaIndex
 from engram.sdk.llama_index import EngramVectorStore
-store = EngramVectorStore(miner_url="http://72.62.2.34:8091")
+store = EngramVectorStore(miner_url="https://api.theengram.space")
 index = VectorStoreIndex.from_documents(
     documents,
     storage_context=StorageContext.from_defaults(vector_store=store)
