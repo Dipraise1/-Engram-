@@ -164,32 +164,53 @@ class IngestHandler:
                 )
 
     def _resolve_namespace(self, synapse: IngestSynapse) -> str:
-        """Validate namespace key and return the namespace to store under."""
+        """Authenticate the namespace claim and return the namespace to store under."""
         from engram.miner.store import _PUBLIC_NS
-        ns  = synapse.namespace
-        key = synapse.namespace_key
+        ns = synapse.namespace
 
         if ns is None:
-            return _PUBLIC_NS   # public data — no auth needed
+            return _PUBLIC_NS
 
         if self._ns_registry is None:
             raise ValueError("This miner does not support private namespaces.")
 
+        # ── Sig-based auth (preferred — key never travels on wire) ────────────
+        sig = synapse.namespace_sig
+        ts  = synapse.namespace_timestamp_ms
+        hk  = synapse.namespace_hotkey
+
+        if sig and ts and hk:
+            if not self._ns_registry.verify_sig(ns, hk, sig, ts):
+                raise ValueError(
+                    f"Namespace signature invalid for '{ns}'. "
+                    "Check your hotkey, timestamp, and message format."
+                )
+            if not self._ns_registry.exists(ns):
+                self._ns_registry.register_owner(ns, hk)
+                logger.info(f"Namespace '{ns}' registered via sig | owner={hk[:12]}…")
+            elif self._ns_registry.owner_hotkey(ns) != hk:
+                raise ValueError(
+                    f"Hotkey {hk[:12]}… is not the registered owner of namespace '{ns}'."
+                )
+            return ns
+
+        # ── Legacy key-based auth (backward compat, deprecated) ───────────────
+        key = synapse.namespace_key
         if key is None:
             raise ValueError(
-                f"Namespace '{ns}' requires a key. Pass namespace_key in your request."
+                f"Namespace '{ns}' requires authentication. "
+                "Provide namespace_hotkey + namespace_sig + namespace_timestamp_ms "
+                "(or legacy namespace_key)."
             )
+        logger.warning(f"Namespace '{ns}' using deprecated key-based auth — migrate to sig-based.")
 
-        # Auto-create namespace on first use with this key
         if not self._ns_registry.exists(ns):
             self._ns_registry.create(ns, key)
-            logger.info(f"Auto-created namespace '{ns}'")
+            logger.info(f"Namespace '{ns}' auto-created (legacy key auth)")
             return ns
 
         if not self._ns_registry.verify(ns, key):
-            raise ValueError(
-                f"Invalid key for namespace '{ns}'. Check your namespace_key."
-            )
+            raise ValueError(f"Invalid key for namespace '{ns}'.")
         return ns
 
     def _resolve_embedding(self, synapse: IngestSynapse) -> np.ndarray:

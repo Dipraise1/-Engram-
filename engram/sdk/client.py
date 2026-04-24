@@ -71,6 +71,30 @@ class EngramClient:
         else:
             self._enc = None
 
+    def _namespace_auth(self) -> dict:
+        """
+        Return namespace auth fields for a request body.
+
+        When a keypair is available: sign the canonical challenge — the raw key
+        never leaves the client (fixes ATLAS AML.T0043 wire exposure).
+        Falls back to legacy namespace_key when no keypair is set.
+        """
+        if not self.namespace:
+            return {}
+        if self._keypair is not None:
+            import time as _t
+            ts = int(_t.time() * 1000)
+            msg = f"engram-ns:{self.namespace}:{ts}".encode()
+            sig = "0x" + self._keypair.sign(msg).hex()
+            return {
+                "namespace":              self.namespace,
+                "namespace_hotkey":       self._keypair.ss58_address,
+                "namespace_sig":          sig,
+                "namespace_timestamp_ms": ts,
+            }
+        # Legacy fallback
+        return {"namespace": self.namespace, "namespace_key": self.namespace_key}
+
     @classmethod
     def from_subnet(
         cls,
@@ -193,8 +217,7 @@ class EngramClient:
             payload: dict[str, Any] = {
                 "raw_embedding": embedding,
                 "metadata": {"_enc": enc_blob},
-                "namespace":     self.namespace,
-                "namespace_key": self.namespace_key,
+                **self._namespace_auth(),
             }
         else:
             payload = {"text": text, "metadata": metadata or {}}
@@ -229,10 +252,7 @@ class EngramClient:
         Raises:
             MinerOfflineError, IngestError, InvalidCIDError
         """
-        payload: dict[str, Any] = {"raw_embedding": embedding, "metadata": metadata or {}}
-        if self.namespace:
-            payload["namespace"]     = self.namespace
-            payload["namespace_key"] = self.namespace_key
+        payload: dict[str, Any] = {"raw_embedding": embedding, "metadata": metadata or {}, **self._namespace_auth()}
         data = self._post("IngestSynapse", payload)
 
         if data.get("error"):
@@ -273,10 +293,9 @@ class EngramClient:
             from engram.miner.embedder import get_embedder
             query_vector = get_embedder().embed(text).tolist()
             payload: dict[str, Any] = {
-                "query_vector":  query_vector,
-                "top_k":         top_k,
-                "namespace":     self.namespace,
-                "namespace_key": self.namespace_key,
+                "query_vector": query_vector,
+                "top_k":        top_k,
+                **self._namespace_auth(),
             }
         else:
             payload = {"query_text": text, "top_k": top_k}

@@ -68,8 +68,7 @@ class QueryHandler:
 
     def _resolve_namespace(self, synapse: QuerySynapse) -> str:
         from engram.miner.store import _PUBLIC_NS
-        ns  = synapse.namespace
-        key = synapse.namespace_key
+        ns = synapse.namespace
 
         if ns is None:
             return _PUBLIC_NS
@@ -77,20 +76,31 @@ class QueryHandler:
         if self._ns_registry is None:
             raise ValueError("This miner does not support private namespaces.")
 
+        # ── Sig-based auth (preferred) ────────────────────────────────────────
+        sig = synapse.namespace_sig
+        ts  = synapse.namespace_timestamp_ms
+        hk  = synapse.namespace_hotkey
+
+        if sig and ts and hk:
+            if not self._ns_registry.verify_sig(ns, hk, sig, ts):
+                raise ValueError(f"Namespace signature invalid for '{ns}'.")
+            if not self._ns_registry.exists(ns):
+                raise ValueError(f"Namespace '{ns}' does not exist.")
+            if self._ns_registry.owner_hotkey(ns) != hk:
+                raise ValueError(f"Hotkey {hk[:12]}… is not the registered owner of namespace '{ns}'.")
+            return ns
+
+        # ── Legacy key-based auth (deprecated) ────────────────────────────────
+        key = synapse.namespace_key
         if key is None:
             raise ValueError(
-                f"Namespace '{ns}' requires a key. Pass namespace_key in your request."
+                f"Namespace '{ns}' requires authentication. "
+                "Provide namespace_hotkey + namespace_sig + namespace_timestamp_ms."
             )
-
         if not self._ns_registry.exists(ns):
-            raise ValueError(
-                f"Namespace '{ns}' does not exist. Create it by ingesting data with the same namespace + key."
-            )
-
+            raise ValueError(f"Namespace '{ns}' does not exist.")
         if not self._ns_registry.verify(ns, key):
-            raise ValueError(
-                f"Invalid key for namespace '{ns}'."
-            )
+            raise ValueError(f"Invalid key for namespace '{ns}'.")
         return ns
 
     def _resolve_query(self, synapse: QuerySynapse) -> np.ndarray:

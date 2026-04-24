@@ -24,9 +24,9 @@ class IngestSynapse(bt.Synapse):
     Request:  text OR raw_embedding (one must be provided)
     Response: cid (set by miner on success)
 
-    Private collections:
-      Set `namespace` + `namespace_key` to store data in an isolated, access-controlled
-      collection. Without these fields the data is public (existing behaviour).
+    Private collections — two auth modes (prefer sig-based):
+      Sig-based  (secure):  namespace + namespace_hotkey + namespace_sig + namespace_timestamp_ms
+      Key-based  (legacy):  namespace + namespace_key
     """
 
     # Request fields
@@ -48,11 +48,26 @@ class IngestSynapse(bt.Synapse):
     )
     namespace: str | None = Field(
         default=None,
-        description="Private collection name. Data is isolated and requires namespace_key to access.",
+        description="Private collection name.",
     )
+    # ── Sig-based namespace auth (preferred) ──────────────────────────────────
+    namespace_hotkey: str | None = Field(
+        default=None,
+        description="Bittensor SS58 hotkey that owns this namespace.",
+    )
+    namespace_sig: str | None = Field(
+        default=None,
+        description="sr25519 hex signature over 'engram-ns:{namespace}:{namespace_timestamp_ms}'. "
+                    "Replaces namespace_key — key never travels over the wire.",
+    )
+    namespace_timestamp_ms: int | None = Field(
+        default=None,
+        description="Unix ms timestamp for namespace_sig replay prevention (±60s window).",
+    )
+    # ── Legacy key-based auth (deprecated, backward compat) ───────────────────
     namespace_key: str | None = Field(
         default=None,
-        description="Secret key for the namespace. Never stored — only a hash is kept.",
+        description="[Deprecated] Secret key for the namespace. Use namespace_sig instead.",
     )
 
     # Response fields (miner writes these)
@@ -84,14 +99,13 @@ class QuerySynapse(bt.Synapse):
     query_text: str | None = Field(default=None)
     query_vector: list[float] | None = Field(default=None)
     top_k: int = Field(default=10, ge=1, le=100)
-    namespace: str | None = Field(
-        default=None,
-        description="Private collection to search within. Requires matching namespace_key.",
-    )
-    namespace_key: str | None = Field(
-        default=None,
-        description="Secret key for the namespace.",
-    )
+    namespace: str | None = Field(default=None)
+    # ── Sig-based namespace auth (preferred) ──────────────────────────────────
+    namespace_hotkey: str | None = Field(default=None)
+    namespace_sig: str | None = Field(default=None)
+    namespace_timestamp_ms: int | None = Field(default=None)
+    # ── Legacy key-based auth (deprecated) ────────────────────────────────────
+    namespace_key: str | None = Field(default=None)
 
     # Response fields (miner writes these)
     results: list[dict[str, Any]] = Field(
