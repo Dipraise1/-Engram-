@@ -50,7 +50,9 @@ from loguru import logger
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-REQUIRE_SIG: bool = os.getenv("REQUIRE_HOTKEY_SIG", "false").lower() == "true"
+from engram.config import ENGRAM_ENV
+_sig_default = "true" if ENGRAM_ENV == "mainnet" else "false"
+REQUIRE_SIG: bool = os.getenv("REQUIRE_HOTKEY_SIG", _sig_default).lower() == "true"
 REPLAY_WINDOW_SECS: float = 30.0
 
 _raw_allowlist = os.getenv("ALLOWED_VALIDATOR_HOTKEYS", "").strip()

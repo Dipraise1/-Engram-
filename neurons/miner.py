@@ -23,6 +23,7 @@ import hashlib
 import hmac as _hmac
 import ipaddress
 import json
+import math
 import sqlite3
 import struct
 import time
@@ -407,6 +408,33 @@ async def run() -> None:
 
     # ── HTTP handlers ─────────────────────────────────────────────────────────
 
+    _LATENCY_BUCKET_MS: float = 100.0
+    _PAYLOAD_BUCKETS: list[int] = [1024, 4096, 16384, 65536]
+
+    async def _pad_latency(t0: float, is_private: bool) -> None:
+        """Round response time up to the nearest 100ms bucket for private namespaces.
+        Prevents response-timing side-channels that reveal cache hits or data size."""
+        if not is_private:
+            return
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        target_ms = math.ceil(max(elapsed_ms, 1) / _LATENCY_BUCKET_MS) * _LATENCY_BUCKET_MS
+        wait_s = (target_ms - elapsed_ms) / 1000
+        if wait_s > 0.001:
+            await asyncio.sleep(wait_s)
+
+    def _pad_payload(data: dict, is_private: bool) -> dict:
+        """Pad response JSON to the nearest size bucket for private namespaces.
+        Prevents payload-size side-channels that reveal stored content length."""
+        if not is_private:
+            return data
+        raw_len = len(json.dumps(data))
+        # Find the smallest bucket that fits; overflow goes to the largest
+        target = next((b for b in _PAYLOAD_BUCKETS if b >= raw_len + 12), _PAYLOAD_BUCKETS[-1])
+        pad = target - raw_len - len(',"_p":""}') - 1
+        if pad > 0:
+            data["_p"] = "x" * pad
+        return data
+
     def _rate_limit_key(req: web.Request, hotkey: str | None) -> str:
         """Use the verified hotkey if present, otherwise fall back to peer IP."""
         if hotkey:
@@ -524,6 +552,7 @@ async def run() -> None:
                 namespace     = body.get("namespace") or None,
                 namespace_key = body.get("namespace_key") or None,
             )
+            is_private = bool(body.get("namespace"))
             result = await asyncio.get_running_loop().run_in_executor(None, query_handler.handle, synapse)
             elapsed_ms = (_time.perf_counter() - t0) * 1000
             METRICS.query_duration.observe(elapsed_ms)
@@ -540,8 +569,6 @@ async def run() -> None:
             if len(_latency_window) > 100:
                 _latency_window.pop(0)
             # ── Metadata filter (post-ANN) ───────────────────────────────────
-            # Fetch more than top_k in the ANN step (handled in store.search)
-            # then filter here so developers can scope results by metadata fields.
             meta_filter = body.get("filter") or None
             filtered_results = result.results or []
             if meta_filter and isinstance(meta_filter, dict):
@@ -552,11 +579,14 @@ async def run() -> None:
                         for k, v in meta_filter.items()
                     )
                 ]
-            return web.json_response({
+            # ── Side-channel defences (private namespaces only) ──────────────
+            await _pad_latency(t0, is_private)
+            payload = _pad_payload({
                 "results"   : filtered_results,
                 "latency_ms": result.latency_ms,
                 "error"     : result.error,
-            })
+            }, is_private)
+            return web.json_response(payload)
         except Exception as exc:
             METRICS.query_total.labels(status="error").inc()
             logger.error(f"Query error: {exc}")

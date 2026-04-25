@@ -73,9 +73,15 @@ ARWEAVE_GATEWAY_URL: str = os.getenv("ARWEAVE_GATEWAY_URL", "https://arweave.net
 _dp_env = os.getenv("DP_EPSILON", "3.0").strip().lower()
 DP_EPSILON: float | None = None if _dp_env in ("0", "none", "false", "") else float(_dp_env)
 
+# ── Environment ────────────────────────────────────────────────────────────────
+# ENGRAM_ENV=mainnet  — production defaults (REQUIRE_HOTKEY_SIG=true)
+# ENGRAM_ENV=dev      — permissive defaults for local testing (default)
+ENGRAM_ENV: str = os.getenv("ENGRAM_ENV", "dev").lower()
+
 # ── Security ───────────────────────────────────────────────────────────────────
 # REQUIRE_HOTKEY_SIG=true  — reject requests without a valid sr25519 signature
-# REQUIRE_HOTKEY_SIG=false — warn but allow (default; backward compatible)
+# REQUIRE_HOTKEY_SIG=false — warn but allow (dev default; backward compatible)
+# On mainnet (ENGRAM_ENV=mainnet) REQUIRE_HOTKEY_SIG defaults to true.
 # ALLOWED_VALIDATOR_HOTKEYS — comma-separated SS58 hotkeys permitted to call the miner
 #   Leave empty to allow all hotkeys (still subject to stake check + rate limit).
 # See engram/miner/auth.py for the signing protocol.

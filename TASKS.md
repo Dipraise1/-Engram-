@@ -12,6 +12,11 @@
 | Flag-stripping downgrade closed via signature coverage | AML.T0043 downgrade | `58b312f` |
 | TLS on miner — `https://api.theengram.space` routes to port 8091 | passive wire sniffing | `58b312f` |
 | Arweave storage across full stack (SDK + miner, not just web) | AML.T0035 | `f80a804` |
+| Fix event-loop blocking — embed/metagraph calls moved to thread executors | operational resilience | `c5dbbeb` |
+| Switch vector store to Qdrant — crash-safe WAL, zero data loss on restart | operational resilience | `c5dbbeb` |
+| Timing + payload padding for private namespace queries | AML.T0036 side-channel | current |
+| REQUIRE_HOTKEY_SIG defaults to true on mainnet via ENGRAM_ENV | AML.T0043 unsigned bypass | current |
+| Weekly miner auto-restart cron (`/etc/cron.d/engram-miner-restart`) | operational resilience | current |
 
 ---
 
@@ -48,71 +53,21 @@ Retrieval requires K-of-N miners to cooperate via a lightweight MPC round.
 
 ---
 
-### 🔲 Timing / Access-Pattern Side-Channel
+### ✅ Timing / Access-Pattern Side-Channel
 
-**Priority:** Medium  
-**ATLAS:** AML.T0036 — Data from information repositories (side-channel variant)  
-**Effort:** 1 day
-
-**Problem:**  
-Even with fully encrypted content, response timing and payload sizes leak information:
-- Fast response → cache hit → content was recently accessed
-- Large response → large stored object
-- Query pattern → reveals what topics a user searches
-
-**Solution:**  
-1. **Uniform response latency** — pad all responses to a fixed minimum latency bucket
-   (e.g. round up to nearest 100ms) before returning.
-2. **Payload padding** — pad response JSON to fixed size buckets (1KB, 4KB, 16KB).
-3. **Rate-limit logging** — strip per-query timing from logs for private namespaces.
-
-**Files to touch:**
-- `neurons/miner.py` — add `_pad_response_timing(min_ms)` around handler calls
-- `engram/miner/query.py` — pad result payload size before returning
+Shipped. Private namespace queries now padded to nearest 100ms latency bucket (`_pad_latency`) and nearest 1KB/4KB/16KB/64KB payload bucket (`_pad_payload`) in `neurons/miner.py`. Public queries unaffected (no validator scoring impact).
 
 ---
 
-### 🔲 Miner Memory Leak / Freeze Prevention
+### ✅ Miner Event-Loop Freeze + Memory Loss Prevention
 
-**Priority:** Medium  
-**Not an ATLAS item — operational resilience**  
-**Effort:** Half day
-
-**Problem:**  
-Miner froze on 2026-04-23 after memory crept to 1.7G (max 2G). Socket accept queue
-filled (Recv-Q 129/128). Root cause: FAISS index growth + Python memory fragmentation
-over multi-day uptime.
-
-**Solution:**  
-1. Add a scheduled miner restart (weekly `systemctl restart engram-miner` via cron).
-2. Add memory headroom monitoring — alert or auto-restart at 85% of `MemoryMax`.
-3. Investigate FAISS index compaction to reduce RSS.
-
-**Files to touch:**
-- `/etc/systemd/system/engram-miner.service` — add `MemoryMax` + `Restart=on-failure`
-  with `RestartSec=10` and a weekly `OnCalendar` timer unit
-- `neurons/miner.py` — add `/metrics` endpoint exposing RSS + index size
+Root cause was two blocking calls on the asyncio event loop (OpenAI embedding + metagraph refresh), not FAISS memory growth. Fixed by moving both to thread executors. Vector store switched from FAISS (in-memory, crash-loses-data) to Qdrant (WAL-backed, crash-safe). Weekly restart cron added as safety net.
 
 ---
 
-### 🔲 REQUIRE_HOTKEY_SIG Enforcement
+### ✅ REQUIRE_HOTKEY_SIG Enforcement
 
-**Priority:** Low  
-**ATLAS:** AML.T0043 — unsigned requests bypass identity checks  
-**Effort:** Half day
-
-**Problem:**  
-`REQUIRE_HOTKEY_SIG` defaults to `false` — unsigned SDK requests are allowed with only
-a deprecation warning. Malicious actors can ingest without any on-chain identity.
-
-**Solution:**  
-Flip default to `true` on mainnet, keep `false` for local dev.
-Add `ENGRAM_ENV=mainnet|dev` config that sets the default automatically.
-
-**Files to touch:**
-- `engram/miner/auth.py` — read `ENGRAM_ENV` to set `REQUIRE_SIG` default
-- `engram/config.py` — add `ENGRAM_ENV` constant
-- `/opt/engram/.env.miner` — set `ENGRAM_ENV=mainnet` on VPS
+Shipped. `ENGRAM_ENV=mainnet` in `.env.miner` causes `REQUIRE_HOTKEY_SIG` to default to `true`. Local dev remains permissive without any env change needed.
 
 ---
 
@@ -134,14 +89,6 @@ certbot --nginx -d theengram.space -d www.theengram.space \
 
 ---
 
-### 🔲 Weekly Miner Auto-Restart Cron
+### ✅ Weekly Miner Auto-Restart Cron
 
-**Priority:** Medium  
-**Effort:** 10 minutes
-
-Prevents the socket-queue freeze seen on 2026-04-23.
-
-```bash
-# On VPS: /etc/cron.d/engram-miner-restart
-0 4 * * 0 root systemctl restart engram-miner
-```
+Shipped. `/etc/cron.d/engram-miner-restart` restarts the miner every Sunday at 04:00 UTC.
