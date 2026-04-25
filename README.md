@@ -52,7 +52,7 @@ Engram is a Bittensor subnet that turns text, images, and documents into **perma
 | Network | Bittensor Testnet |
 | Subnet UID | **450** |
 | Embedding model | `all-MiniLM-L6-v2` (384d, local) |
-| Vector index | FAISS HNSW |
+| Vector index | Qdrant (persistent WAL) |
 | Proof type | HMAC-SHA256 challenge-response |
 | Blob storage | Arweave (pay-once permanent) |
 | Dashboard | [theengram.space](https://theengram.space) |

@@ -42,6 +42,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from typing import Any
 
@@ -69,12 +70,16 @@ _NETWORK = os.getenv("SUBTENSOR_ENDPOINT") or os.getenv("SUBTENSOR_NETWORK", "te
 _METAGRAPH_CACHE_TTL_SECS: float = 300.0
 _metagraph_hotkeys: set[str] = set()
 _metagraph_last_refresh: float = 0.0
+_refresh_lock = threading.Lock()
 
 
 def _refresh_metagraph() -> None:
-    """Pull registered hotkeys from the Bittensor metagraph into the local cache."""
-    global _metagraph_hotkeys, _metagraph_last_refresh
+    """Pull registered hotkeys from the Bittensor metagraph into the local cache.
+    Runs in a background daemon thread — never blocks the caller."""
+    if not _refresh_lock.acquire(blocking=False):
+        return  # another thread is already refreshing
     try:
+        global _metagraph_hotkeys, _metagraph_last_refresh
         import bittensor as bt
         subtensor = bt.Subtensor(network=_NETWORK)
         metagraph = subtensor.metagraph(netuid=_NETUID)
@@ -83,12 +88,14 @@ def _refresh_metagraph() -> None:
         logger.debug(f"Metagraph cache refreshed | {len(_metagraph_hotkeys)} hotkeys on netuid={_NETUID}")
     except Exception as exc:
         logger.warning(f"Metagraph refresh failed — keeping stale cache: {exc}")
+    finally:
+        _refresh_lock.release()
 
 
 def _is_registered(hotkey: str) -> bool:
     """Return True if the hotkey is registered on the subnet (cached, refreshed every 5 min)."""
     if time.time() - _metagraph_last_refresh > _METAGRAPH_CACHE_TTL_SECS:
-        _refresh_metagraph()
+        threading.Thread(target=_refresh_metagraph, daemon=True).start()
     return hotkey in _metagraph_hotkeys
 
 

@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 const MINER_URL = process.env.MINER_API_URL || "http://localhost:8091";
 const XAI_API_KEY = process.env.XAI_API_KEY || "";
 
-// Fetch extra candidates — filter to this session after
-const MEMORY_FETCH_K = 40;
+// Fetch enough candidates to cover the full index before session filtering.
+// With 1023+ vectors, top-40 misses session-specific memories ranked below the global cutoff.
+const MEMORY_FETCH_K = 500;
 const MEMORY_USE_K = 12;
 // How many recent messages to include as direct conversation context
 const RECENT_HISTORY_N = 20;
@@ -61,7 +62,7 @@ async function queryEngram(queryText: string, sessionId: string): Promise<Memory
     const res = await fetch(`${MINER_URL}/QuerySynapse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query_text: queryText, top_k: MEMORY_FETCH_K }),
+      body: JSON.stringify({ query_text: queryText, top_k: MEMORY_FETCH_K, filter: { session: sessionId } }),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return [];

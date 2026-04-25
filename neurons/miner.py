@@ -284,7 +284,7 @@ async def run() -> None:
     # ── FAISS persistence: load existing index from disk ─────────────────────
     index_path   = os.getenv("FAISS_INDEX_PATH", "./data/miner.index")
     _ingest_count = 0
-    SAVE_EVERY    = int(os.getenv("FAISS_SAVE_EVERY", "25"))  # auto-save every N ingests
+    SAVE_EVERY    = int(os.getenv("FAISS_SAVE_EVERY", "5"))   # auto-save every N ingests
 
     if os.path.exists(index_path + ".meta.json"):
         try:
@@ -444,7 +444,7 @@ async def run() -> None:
                 namespace     = body.get("namespace") or None,
                 namespace_key = body.get("namespace_key") or None,
             )
-            result = ingest_handler.handle(synapse, caller_hotkey=caller_hotkey)
+            result = await asyncio.get_running_loop().run_in_executor(None, lambda: ingest_handler.handle(synapse, caller_hotkey=caller_hotkey))
             elapsed_ms = (time.perf_counter() - t0) * 1000
             METRICS.ingest_duration.observe(elapsed_ms)
 
@@ -524,7 +524,7 @@ async def run() -> None:
                 namespace     = body.get("namespace") or None,
                 namespace_key = body.get("namespace_key") or None,
             )
-            result = query_handler.handle(synapse)
+            result = await asyncio.get_running_loop().run_in_executor(None, query_handler.handle, synapse)
             elapsed_ms = (_time.perf_counter() - t0) * 1000
             METRICS.query_duration.observe(elapsed_ms)
             METRICS.query_total.labels(status="error" if result.error else "ok").inc()
@@ -1005,6 +1005,12 @@ async def run() -> None:
             logger.debug(
                 f"Metagraph synced | vectors={store.count()} | peers={router.peer_count()}"
             )
+            # Periodic FAISS flush — guards against crash-loss between per-ingest saves
+            try:
+                await loop.run_in_executor(None, lambda: store.save(index_path))
+                logger.debug(f"FAISS: periodic flush ({store.count()} vectors)")
+            except Exception as exc:
+                logger.warning(f"FAISS periodic flush failed: {exc}")
     except KeyboardInterrupt:
         logger.info("Miner shutting down.")
     finally:
